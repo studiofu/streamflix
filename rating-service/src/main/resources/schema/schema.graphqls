@@ -1,0 +1,16 @@
+type Rating {
+    id: ID!
+    movieId: ID!
+    userId: ID!
+    stars: Int!
+}
+
+# We extend the Movie type defined in the Catalog Service
+type Movie @key(fields: "id") @extends {
+    id: ID! @external
+    ratings: [Rating]
+}
+
+type Query {
+    ratingsByMovie(movieId: ID!): [Rating]
+}

@@ -1,0 +1,12 @@
+type User @key(fields: "id") {
+    id: ID!
+    username: String!
+    email: String!
+}
+
+# [] is used to define a list of users.
+# id: ID! is used to define a unique id for the user.
+type Query {
+    users: [User]
+    user(id: ID!): User
+}

@@ -1,0 +1,18 @@
+# Movie type is defined in the schema.graphqls file.
+# it is used to define the movie object that will be returned by the graphql endpoint.
+# we need @key directive to tell the graphql server that the movie object has a unique id.
+type Movie @key(fields: "id") {
+    id: ID!
+    title: String!
+    description: String
+    releaseYear: Int
+}
+
+
+# No additional types or fields required at this moment. Movie already includes basic fields.
+# type Query is required for the schema to be valid.
+# it is used to define the queries that can be made to the graphql endpoint.
+type Query {
+    movies: [Movie]
+    movie(id: ID!): Movie
+}
