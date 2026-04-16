@@ -1,6 +1,7 @@
 package com.streamflix.rating.fetcher;
 
 import com.netflix.graphql.dgs.*;
+import com.streamflix.rating.model.Movie;
 import com.streamflix.rating.model.Rating;
 import com.streamflix.rating.repository.RatingRepository;
 import com.streamflix.rating.service.KafkaProducerService;
@@ -24,6 +25,11 @@ public class RatingDataFetcher {
         return ratingRepository.findByMovieId(movieId);
     }
 
+    @DgsQuery
+    public List<Rating> allRatings() {
+        return ratingRepository.findAll();
+    }
+
     // 2. The Mutation (Saves to DB, Publishes to Kafka)
     @DgsMutation
     public Rating addRating(@InputArgument String movieId, @InputArgument String userId, @InputArgument Integer stars) {
@@ -31,7 +37,7 @@ public class RatingDataFetcher {
         Rating savedRating = ratingRepository.save(newRating);
         
         System.out.println("Saved rating: " + savedRating);
-        
+
         // Send event to Kafka
         kafkaProducerService.publishRatingEvent(movieId, userId, stars);
         
@@ -42,8 +48,33 @@ public class RatingDataFetcher {
     @DgsData(parentType = "Movie", field = "ratings")
     public List<Rating> ratingsForMovie(DgsDataFetchingEnvironment dfe) {
         // Retrieve the "Movie" object that the gateway passed to us
-        Map<String, Object> movie = dfe.getSource();
-        String movieId = (String) movie.get("id");
-        return ratingRepository.findByMovieId(movieId);
+        // Map<String, Object> movie = dfe.getSource();
+        // String movieId = (String) movie.get("id");
+        // return ratingRepository.findByMovieId(movieId);
+
+        // Now we cast it directly to the Movie object we created
+        Movie movie = dfe.getSource(); 
+        return ratingRepository.findByMovieId(movie.getId());
+
     }
+
+    // Required for Apollo Federation to stitch the extended Movie type
+    // @DgsEntityFetcher(name = "Movie")
+    // public Map<String, Object> movieEntityFetcher(Map<String, Object> values) {
+    //     // The Gateway passes us the @key fields (in this case, just the "id").
+    //     // We simply return this map so that the ratingsForMovie() method can read the ID from it.
+
+    //     // Explicitly tell the GraphQL engine that this Map represents the "Movie" type
+    //     values.put("__typename", "Movie");        
+    //     return values;
+    // }    
+
+    @DgsEntityFetcher(name = "Movie")
+    public Movie movieEntityFetcher(Map<String, Object> values) {
+        String id = (String) values.get("id");
+        return new Movie(id);
+    }    
+
+
+      
 }
