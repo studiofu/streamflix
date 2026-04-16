@@ -8,9 +8,9 @@ const gateway = new ApolloGateway({
   // on startup and stitch their schemas together automatically.
   supergraphSdl: new IntrospectAndCompose({
     subgraphs: [
-      { name: 'catalog', url: 'http://localhost:8081/graphql' },
-      { name: 'user', url: 'http://localhost:8082/graphql' },
-      { name: 'rating', url: 'http://localhost:8083/graphql' },
+      { name: 'catalog', url: process.env.CATALOG_URL || 'http://localhost:8081/graphql' },
+      { name: 'user', url: process.env.USER_URL || 'http://localhost:8082/graphql' },
+      { name: 'rating', url: process.env.RATING_URL || 'http://localhost:8083/graphql' },
     ],
   }),
 });

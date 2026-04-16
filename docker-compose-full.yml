@@ -1,0 +1,122 @@
+# docker-compose-full.yml
+services:
+
+  # ==========================================
+  # 1. INFRASTRUCTURE & DATABASES
+  # ==========================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: streamflix-postgres
+    environment:
+      POSTGRES_USER: streamflix_user
+      POSTGRES_PASSWORD: streamflix_pass
+      POSTGRES_DB: streamflix_db
+    ports:
+      - "5432:5432"
+
+  mongodb:
+    image: mongo:7.0
+    container_name: streamflix-mongo
+    ports:
+      - "27017:27017"
+
+  kafka:
+    image: apache/kafka:3.7.0
+    container_name: streamflix-kafka
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:9093'
+      # Notice we expose internal port 9092 for other containers to connect to
+      KAFKA_LISTENERS: 'PLAINTEXT://kafka:9092,CONTROLLER://kafka:9093,EXTERNAL://0.0.0.0:9094'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      CLUSTER_ID: 'StreamFlixCluster12345'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+
+  # ==========================================
+  # 2. NETFLIX DISCOVERY (EUREKA)
+  # ==========================================
+  eureka-server:
+    build: ./eureka-server
+    container_name: eureka-server
+    ports:
+      - "8761:8761"
+    environment:
+      - EUREKA_HOSTNAME=eureka-server
+
+  # ==========================================
+  # 3. MICROSERVICES (DGS SUBGRAPHS)
+  # ==========================================
+  catalog-service:
+    build: ./catalog-service
+    container_name: catalog-service
+    ports:
+      - "8081:8081"
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/streamflix_db
+      - EUREKA_URL=http://eureka-server:8761/eureka/
+    depends_on:
+      - mongodb
+      - eureka-server
+
+  user-service:
+    build: ./user-service
+    container_name: user-service
+    ports:
+      - "8082:8082"
+    environment:
+      - POSTGRES_URL=jdbc:postgresql://postgres:5432/streamflix_db
+      - EUREKA_URL=http://eureka-server:8761/eureka/
+    depends_on:
+      - postgres
+      - eureka-server
+
+  rating-service:
+    build: ./rating-service
+    container_name: rating-service
+    ports:
+      - "8083:8083"
+    environment:
+      - POSTGRES_URL=jdbc:postgresql://postgres:5432/streamflix_db
+      - EUREKA_URL=http://eureka-server:8761/eureka/
+      - KAFKA_URL=kafka:9092
+    depends_on:
+      - postgres
+      - kafka
+      - eureka-server
+
+  # ==========================================
+  # 4. APOLLO FEDERATION GATEWAY
+  # ==========================================
+  federation-gateway:
+    build: ./federation-gateway
+    container_name: federation-gateway
+    ports:
+      - "4000:4000"
+    environment:
+      - CATALOG_URL=http://catalog-service:8081/graphql
+      - USER_URL=http://user-service:8082/graphql
+      - RATING_URL=http://rating-service:8083/graphql
+    restart: on-failure   
+    depends_on:
+      - catalog-service
+      - user-service
+      - rating-service
+
+
+# ==========================================
+# 5. FRONTEND UI (REACT + NGINX)
+# ==========================================
+  streamflix-ui:
+    build: ./streamflix-ui
+    container_name: streamflix-ui
+    # We map port 3000 on your machine to Nginx's internal port 80
+    ports:
+      - "3000:80"
+    depends_on:
+      - federation-gateway      
