@@ -14,3 +14,7 @@ type Movie @key(fields: "id") @extends {
 type Query {
     ratingsByMovie(movieId: ID!): [Rating]
 }
+
+type Mutation {
+    addRating(movieId: ID!, userId: ID!, stars: Int!): Rating
+}

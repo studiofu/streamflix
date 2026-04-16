@@ -35,3 +35,17 @@ build/
 ### OS ###
 .DS_Store
 Thumbs.db
+
+### Node.js (e.g. federation-gateway) ###
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+*.tsbuildinfo
+.env
+.env.local
+.env.*.local
+dist/
+coverage/
+.nyc_output/
