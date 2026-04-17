@@ -4,7 +4,7 @@ import com.netflix.graphql.dgs.*;
 import com.streamflix.rating.model.Movie;
 import com.streamflix.rating.model.Rating;
 import com.streamflix.rating.repository.RatingRepository;
-import com.streamflix.rating.service.KafkaProducerService;
+import com.streamflix.rating.service.RatingService;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.List;
@@ -17,7 +17,7 @@ public class RatingDataFetcher {
     private RatingRepository ratingRepository;
 
     @Autowired
-    private KafkaProducerService kafkaProducerService;
+    private RatingService ratingService;
 
     // 1. Standard Query
     @DgsQuery
@@ -33,15 +33,7 @@ public class RatingDataFetcher {
     // 2. The Mutation (Saves to DB, Publishes to Kafka)
     @DgsMutation
     public Rating addRating(@InputArgument String movieId, @InputArgument String userId, @InputArgument Integer stars) {
-        Rating newRating = new Rating(movieId, userId, stars);
-        Rating savedRating = ratingRepository.save(newRating);
-        
-        System.out.println("Saved rating: " + savedRating);
-
-        // Send event to Kafka
-        kafkaProducerService.publishRatingEvent(savedRating.getId().toString(), movieId, userId, stars);
-        
-        return savedRating;
+        return ratingService.createRatingAndOutboxEvent(movieId, userId, stars);
     }
 
     // 3. Federation Magic: Resolves the "ratings" field on the extended Movie type
