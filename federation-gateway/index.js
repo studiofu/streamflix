@@ -1,11 +1,16 @@
 const { ApolloServer } = require('@apollo/server');
 const { startStandaloneServer } = require('@apollo/server/standalone');
-const { ApolloGateway, IntrospectAndCompose } = require('@apollo/gateway');
+const {
+  ApolloGateway,
+  IntrospectAndCompose,
+  RemoteGraphQLDataSource,
+} = require('@apollo/gateway');
 
-// Initialize the Gateway
+const jwt = require('jsonwebtoken');
+
+const JWT_SECRET = process.env.JWT_SECRET || "super-secret-streamflix-key";
+
 const gateway = new ApolloGateway({
-  // IntrospectAndCompose tells the gateway to reach out to the subgraphs
-  // on startup and stitch their schemas together automatically.
   supergraphSdl: new IntrospectAndCompose({
     subgraphs: [
       { name: 'catalog', url: process.env.CATALOG_URL || 'http://localhost:8081/graphql' },
@@ -13,17 +18,41 @@ const gateway = new ApolloGateway({
       { name: 'rating', url: process.env.RATING_URL || 'http://localhost:8083/graphql' },
     ],
   }),
+  buildService({ name, url }) {
+    return new RemoteGraphQLDataSource({
+      url,
+      willSendRequest({ request, context }) {
+        if (context.userId) {
+          request.http.headers.set('x-user-id', context.userId);
+        }
+      },
+    });
+  },
 });
 
-// Start the Server
-async function startGateway() {
-  const server = new ApolloServer({ gateway });
-  
-  const { url } = await startStandaloneServer(server, {
-    listen: { port: 4000 },
-  });
-  
-  console.log(`🚀 StreamFlix Federation Gateway ready at ${url}`);
-}
+const server = new ApolloServer({
+  gateway,
+});
 
-startGateway();
+startStandaloneServer(server, {
+  listen: { port: 4000 },
+  context: async ({ req }) => {
+    const authHeader = req.headers.authorization || '';
+
+    if (authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        console.log("Decoded JWT Token:", decoded);
+        return { userId: decoded.userId };
+      } catch (err) {
+        console.error("Invalid JWT Token!");
+      }
+    }else {
+      console.log("No JWT Token provided");
+    }
+    return {};
+  },
+}).then(({ url }) => {
+  console.log(`Gateway ready at ${url}`);
+});
