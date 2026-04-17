@@ -10,3 +10,15 @@ type Query {
     users: [User]
     user(id: ID!): User
 }
+
+
+type Mutation {
+    # Dummy login endpoint
+    login(username: String!, password: String!): AuthPayload
+}
+
+type AuthPayload {
+    token: String!
+    userId: String!
+}
+

@@ -17,6 +17,8 @@ const gateway = new ApolloGateway({
       { name: 'user', url: process.env.USER_URL || 'http://localhost:8082/graphql' },
       { name: 'rating', url: process.env.RATING_URL || 'http://localhost:8083/graphql' },
     ],
+    // Re-introspect subgraphs periodically so new fields (e.g. Mutation.login) appear without a gateway restart.
+    pollIntervalInMs: Number(process.env.SUPERGRAPH_POLL_MS) || 10_000,
   }),
   buildService({ name, url }) {
     return new RemoteGraphQLDataSource({

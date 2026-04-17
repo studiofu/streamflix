@@ -25,5 +25,5 @@ type Query {
 }
 
 type Mutation {
-    addRating(movieId: ID!, userId: ID!, stars: Int!): Rating
+    addRating(movieId: ID!, stars: Int!): Rating
 }

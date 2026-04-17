@@ -34,17 +34,16 @@ public class RatingDataFetcher {
     // 2. The Mutation (Saves to DB, Publishes to Kafka)
     @DgsMutation
     public Rating addRating(@InputArgument String movieId, 
-        @InputArgument String userId, 
+        //@InputArgument String userId, 
         @InputArgument Integer stars,
         @RequestHeader(name = "x-user-id", required = false) String loggedInUserId        
     ) {
-        String userIdToUse = loggedInUserId != null ? loggedInUserId : userId;        
 
         if(loggedInUserId == null || loggedInUserId.isEmpty()) {
             throw new RuntimeException("User ID is required");
         }
 
-        return ratingService.createRatingAndOutboxEvent(movieId, userId, stars);
+        return ratingService.createRatingAndOutboxEvent(movieId, loggedInUserId, stars);
     }
 
     // 3. Federation Magic: Resolves the "ratings" field on the extended Movie type
