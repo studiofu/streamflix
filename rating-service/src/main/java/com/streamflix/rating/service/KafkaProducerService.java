@@ -12,9 +12,12 @@ public class KafkaProducerService {
     @Autowired
     private KafkaTemplate<String, String> kafkaTemplate;
 
-    public void publishRatingEvent(String movieId, String userId, Integer stars) {
+    // Update the method signature to accept the Rating ID
+    public void publishRatingEvent(String ratingId, String movieId, String userId, Integer stars) {
         String message = String.format("User %s rated Movie %s with %d stars", userId, movieId, stars);
-        kafkaTemplate.send(TOPIC, movieId, message);
+        
+        // send(topic, key, value)
+        kafkaTemplate.send(TOPIC, ratingId, message); 
         System.out.println("Published to Kafka: " + message);
     }
 }

@@ -39,7 +39,7 @@ public class RatingDataFetcher {
         System.out.println("Saved rating: " + savedRating);
 
         // Send event to Kafka
-        kafkaProducerService.publishRatingEvent(movieId, userId, stars);
+        kafkaProducerService.publishRatingEvent(savedRating.getId().toString(), movieId, userId, stars);
         
         return savedRating;
     }
