@@ -90,6 +90,18 @@ services:
       - kafka
       - eureka-server
 
+  analytics-service:
+    build: ./analytics-service
+    container_name: analytics-service
+    ports:
+      - "8084:8084"
+    environment:
+      - EUREKA_URL=http://eureka-server:8761/eureka/
+      - KAFKA_URL=kafka:9092
+    depends_on:
+      - kafka
+      - eureka-server
+
   # ==========================================
   # 4. APOLLO FEDERATION GATEWAY
   # ==========================================

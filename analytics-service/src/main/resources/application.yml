@@ -1,0 +1,22 @@
+server:
+  port: 8084
+
+spring:
+  application:
+    name: analytics-service
+  kafka:
+    # Use environment variable for Docker, fallback to localhost for IDE
+    bootstrap-servers: ${KAFKA_URL:localhost:9094}
+    consumer:
+      group-id: analytics-group
+      # If the service boots up late, read all missed messages from the beginning
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+
+      

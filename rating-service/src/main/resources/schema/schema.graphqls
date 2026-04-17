@@ -1,3 +1,5 @@
+# Type is defined in the schema.graphqls file.
+# it is used to define the rating object that will be returned by the graphql endpoint.
 type Rating {
     id: ID!
     movieId: ID!
@@ -6,11 +8,17 @@ type Rating {
 }
 
 # We extend the Movie type defined in the Catalog Service
+# @key(fields: "id") is used to tell the graphql server that the movie object has a unique id.
+# @extends is used to tell the graphql server that the movie object is extended by the rating object.
+# It is not a real movie object, it is just a way to extend the movie object with the ratings object.
 type Movie @key(fields: "id") @extends {
     id: ID! @external
     ratings: [Rating]
 }
 
+# Query is used to define the queries that can be made to the graphql endpoint.
+# ratingsByMovie is used to get the ratings for a specific movie.
+# allRatings is used to get all the ratings.
 type Query {
     ratingsByMovie(movieId: ID!): [Rating]
     allRatings: [Rating]
