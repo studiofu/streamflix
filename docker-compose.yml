@@ -12,6 +12,12 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U streamflix_user -d streamflix_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   # 2. MongoDB (For Catalog Service)
   mongodb:
@@ -21,6 +27,12 @@ services:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   # 3. Redis (For caching and fast watch-state retrieval)
   redis:
@@ -28,6 +40,23 @@ services:
     container_name: streamflix-redis
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+  
+  # ==========================================
+  # REDIS UI (RedisInsight)
+  # ==========================================
+  redisinsight:
+    image: redis/redisinsight:latest
+    container_name: streamflix-redisinsight
+    ports:
+      - "8001:5540" # Maps port 8001 on your browser to the internal UI port
+    depends_on:
+      - redis      
 
   # 4. Apache Kafka (Official Image, KRaft Mode)
   kafka:
@@ -45,9 +74,19 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
       KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
       CLUSTER_ID: 'StreamFlixCluster12345'
+      # Persist broker logs + KRaft metadata (default image path is often under /tmp)
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka:9092 >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
 
   # 5. Kafka UI
   kafka-ui:
@@ -59,8 +98,10 @@ services:
       - KAFKA_CLUSTERS_0_NAME=StreamFlix-Cluster
       - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092
     depends_on:
-      - kafka
+      kafka:
+        condition: service_healthy
 
 volumes:
   postgres_data:
   mongo_data:
+  kafka_data:

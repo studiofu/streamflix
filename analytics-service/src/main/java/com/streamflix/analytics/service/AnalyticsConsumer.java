@@ -1,10 +1,13 @@
 package com.streamflix.analytics.service;
 
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -28,17 +31,28 @@ public class AnalyticsConsumer {
   // Simulating a Redis Cache or Database table for Idempotency
   private final Set<String> processedEventIds = ConcurrentHashMap.newKeySet();
 
+  @Autowired
+  private StringRedisTemplate redisTemplate;
+
   @KafkaListener(topics = "movie-ratings-topic", groupId = "analytics-group")
   public void consumeRatingEvent(ConsumerRecord<String, String> record, Acknowledgment acknowledgment) {
     String eventId = record.key();
     String message = record.value();
 
     try {
-      // 1. Idempotency Check: Have we seen this event before?
-      if (eventId != null && !processedEventIds.add(eventId)) {
-        System.out.println("⚠️ Duplicate event detected and skipped: " + eventId);
-        acknowledgment.acknowledge(); // Tell Kafka we're done with this duplicate
-        return;
+      if (eventId != null) {
+        // Redis SETNX command: Try to set the key.
+        // We also give it a Time-To-Live (TTL) of 7 days so Redis doesn't run out of
+        // memory!
+        String redisKey = "processed_event:" + eventId;
+        Boolean isNewEvent = redisTemplate.opsForValue()
+            .setIfAbsent(redisKey, "done", Duration.ofDays(7));
+
+        if (Boolean.FALSE.equals(isNewEvent)) {
+          System.out.println("⚠️ Duplicate event detected in Redis! Skipped: " + eventId);
+          acknowledgment.acknowledge();
+          return;
+        }
       }
 
       // 2. Process the Message
@@ -57,7 +71,7 @@ public class AnalyticsConsumer {
       // We do NOT call acknowledge().
       // Depending on your setup, this will either pause the partition or send it to a
       // Dead Letter Queue (DLQ).
-    }  
+    }
   }
 
 }

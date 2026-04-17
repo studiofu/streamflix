@@ -1,0 +1,35 @@
+# Start apps with: .\scripts\dev-up.ps1
+# That runs `docker compose up -d --wait` first so Postgres/Mongo/Redis/Kafka are healthy
+# before Spring Boot starts. Running `mprocs` alone assumes infra is already up.
+
+procs:
+  infra:
+    shell: "docker compose logs -f --tail=50"
+
+  eureka:
+    shell: "mvn spring-boot:run"
+    cwd: "eureka-server"
+
+  catalog:
+    shell: "mvn spring-boot:run"
+    cwd: "catalog-service"
+
+  user:
+    shell: "mvn spring-boot:run"
+    cwd: "user-service"
+
+  rating:
+    shell: "mvn spring-boot:run"
+    cwd: "rating-service"
+
+  analytics:
+    shell: "mvn spring-boot:run"
+    cwd: "analytics-service"
+
+  gateway:
+    shell: "node index.js"
+    cwd: "federation-gateway"
+
+  ui:
+    shell: "npm run dev"
+    cwd: "streamflix-ui"
