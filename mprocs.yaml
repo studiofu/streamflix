@@ -26,6 +26,10 @@ procs:
     shell: "mvn spring-boot:run"
     cwd: "analytics-service"
 
+  admin:
+    shell: "mvn spring-boot:run"
+    cwd: "admin-service"
+
   gateway:
     shell: "node index.js"
     cwd: "federation-gateway"
