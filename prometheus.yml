@@ -1,0 +1,18 @@
+global:
+  scrape_interval: 5s 
+
+scrape_configs:
+  - job_name: 'streamflix-backend'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets:
+        # This tells Prometheus to reach OUT of the container and check your host machine!
+        - 'host.docker.internal:8081'  # Catalog Service
+        - 'host.docker.internal:8082'  # User Service
+        - 'host.docker.internal:8083'  # Rating Service
+        - 'host.docker.internal:8084'  # Analytics Service
+        #- 'catalog-service:8081' # if using docker compose
+        #- 'user-service:8082' # if using docker compose
+        #- 'rating-service:8083' # if using docker compose
+        #- 'analytics-service:8084' # if using docker compose
+        #- 'admin-service:8085' # if using docker compose

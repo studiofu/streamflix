@@ -105,7 +105,26 @@ services:
     image: openzipkin/zipkin:latest
     container_name: streamflix-zipkin
     ports:
-      - "9411:9411"        
+      - "9411:9411"       
+
+  # ==========================================
+  # METRICS & DASHBOARDS
+  # ==========================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: streamflix-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    
+  grafana:
+    image: grafana/grafana:latest
+    container_name: streamflix-grafana
+    ports:
+      - "3005:3000" 
+    depends_on:
+      - prometheus       
 
 volumes:
   postgres_data:

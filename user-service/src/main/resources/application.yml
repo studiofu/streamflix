@@ -30,6 +30,9 @@ management:
     web:
       exposure:
         include: "*"  # Opens all actuator endpoints (health, metrics, etc.)
+  metrics:
+    tags:
+      application: ${spring.application.name}
   tracing:
     sampling:
       probability: 1.0
