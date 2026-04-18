@@ -4,6 +4,7 @@ server:
 eureka:
   instance:
     hostname: ${EUREKA_HOSTNAME:localhost}
+    prefer-ip-address: true
   client:
     register-with-eureka: false # It's the server, it doesn't need to register itself
     fetch-registry: false
