@@ -6,7 +6,10 @@ import com.netflix.graphql.dgs.InputArgument;
 import com.netflix.graphql.dgs.DgsEntityFetcher;
 import com.streamflix.catalog.model.Movie;
 import com.streamflix.catalog.repository.MovieRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.Cacheable;
 
 import java.util.List;
 import java.util.Map;
@@ -21,12 +24,16 @@ import java.util.Map;
 @DgsComponent
 public class MovieDataFetcher {
 
+    private static final Logger log = LoggerFactory.getLogger(MovieDataFetcher.class);
+
     @Autowired
     private MovieRepository movieRepository;
 
     // Maps to "movies: [Movie]" in schema.graphqls
     @DgsQuery
+    @Cacheable(value = "moviesCatalog")
     public List<Movie> movies() {
+        log.info("Fetching movies from the PostgreSQL database...");
         return movieRepository.findAll();
     }
 

@@ -6,6 +6,10 @@ spring:
     name: catalog-service
   mongodb:
     uri: ${MONGO_URI:mongodb://localhost:27017/streamflix_db}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost} # Uses localhost for local IDE, or docker host
+      port: 6379    
 
 eureka:
   instance:
@@ -13,6 +17,8 @@ eureka:
   client:
     service-url:
       defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+
+      
 
 management:
   endpoints:
