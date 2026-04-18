@@ -43,9 +43,11 @@ const gateway = new ApolloGateway({
         }
         // W3C Trace Context — propagate from browser/UI so Java subgraphs join the same trace
         if (context.traceparent) {
+          console.log("Setting traceparent:", context.traceparent);
           request.http.headers.set('traceparent', context.traceparent);
         }
         if (context.tracestate) {
+          console.log("Setting tracestate:", context.tracestate);
           request.http.headers.set('tracestate', context.tracestate);
         }
       },
