@@ -118,15 +118,21 @@ services:
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
     
+  # Grafana
+  # Sample JVM Dashboard is 4701, and you need to add DS_PROMETHEUS
+  # as datasource and connect to the prometheus server.
   grafana:
     image: grafana/grafana:latest
     container_name: streamflix-grafana
     ports:
-      - "3005:3000" 
+      - "3005:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
     depends_on:
-      - prometheus       
+      - prometheus
 
 volumes:
   postgres_data:
   mongo_data:
   kafka_data:
+  grafana_data:
