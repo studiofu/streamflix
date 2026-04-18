@@ -1,14 +1,16 @@
 package com.streamflix.catalog.fetcher;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.netflix.graphql.dgs.DgsEntityFetcher;
+import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
-import com.netflix.graphql.dgs.DgsEntityFetcher;
 import com.streamflix.catalog.model.Movie;
 import com.streamflix.catalog.repository.MovieRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 
 import java.util.List;
@@ -33,7 +35,7 @@ public class MovieDataFetcher {
     @DgsQuery
     @Cacheable(value = "moviesCatalog")
     public List<Movie> movies() {
-        log.info("Fetching movies from the PostgreSQL database...");
+        log.info("Fetching movies from MongoDB");
         return movieRepository.findAll();
     }
 
@@ -41,6 +43,16 @@ public class MovieDataFetcher {
     @DgsQuery
     public Movie movie(@InputArgument String id) {
         return movieRepository.findById(id).orElse(null);
+    }
+
+    @DgsMutation
+    @CacheEvict(value = "moviesCatalog", allEntries = true)
+    public Movie addMovie(
+            @InputArgument String title,
+            @InputArgument String description,
+            @InputArgument Integer releaseYear) {
+        Movie movie = new Movie(title, description, releaseYear);
+        return movieRepository.save(movie);
     }
 
     // Required for Apollo Federation (@key directive)

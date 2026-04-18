@@ -16,3 +16,7 @@ type Query {
     movies: [Movie]
     movie(id: ID!): Movie
 }
+
+type Mutation {
+    addMovie(title: String!, description: String, releaseYear: Int): Movie
+}
