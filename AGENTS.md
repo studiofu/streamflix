@@ -7,7 +7,7 @@ This is a microservices streaming platform built with Spring Boot (Java 25), Apo
 ```
 admin-service/       Spring Boot Admin dashboard      (port 8085)
 analytics-service/   Kafka consumer, Redis store       (port 8084)
-catalog-service/     Movie catalog, MongoDB            (port 8081)
+catalog-service/     Movie catalog, MongoDB, Redis cache (port 8081)
 eureka-server/       Service discovery registry         (port 8761)
 federation-gateway/  Apollo Federation Gateway (Node)   (port 4000)
 rating-service/      Ratings, PostgreSQL + Kafka outbox  (port 8083)
@@ -126,7 +126,7 @@ Group imports in this order (separated by blank lines):
 
 - Throw `RuntimeException` with descriptive messages for business errors
 - No custom exception classes or `@ControllerAdvice` in the current codebase
-- Use `System.err.println` for error logging (no SLF4J in current code)
+- Logging is inconsistent across modules: e.g. **catalog** `MovieDataFetcher` uses **SLF4J**; some paths still use **`System.err.println`** (e.g. parts of rating/analytics). Prefer SLF4J for new Java code.
 
 ### Configuration
 
@@ -150,7 +150,7 @@ Group imports in this order (separated by blank lines):
 
 - Components: PascalCase (`App`)
 - Functions/variables: camelCase
-- GraphQL constants: UPPER_SNAKE_CASE (`GET_MOVIES`, `LOGIN_USER`)
+- GraphQL constants: UPPER_SNAKE_CASE (`GET_MOVIES`, `LOGIN_USER`, `ADD_RATING`, `ADD_MOVIE`)
 
 ### ESLint (flat config, ESLint 9)
 
@@ -169,10 +169,11 @@ Group imports in this order (separated by blank lines):
 
 - All services communicate via **GraphQL** (Netflix DGS on Java subgraphs, Apollo Gateway federates them)
 - Service discovery via **Eureka**; distributed tracing via **Zipkin** + W3C Trace Context
-- Database per service: MongoDB (catalog), PostgreSQL (user, rating), Redis (analytics)
+- Database per service: MongoDB (catalog), PostgreSQL (user, rating), Redis (analytics state **and** catalog **Spring Cache** for the `movies` query, cache name `moviesCatalog`)
 - Kafka for event-driven communication (rating → analytics via outbox pattern)
 - Apollo Federation `@key` / `@extends` directives for cross-service entity resolution
-- JWT auth: tokens verified at gateway, `x-user-id` header forwarded to subgraphs
+- JWT auth: tokens verified at gateway, `x-user-id` header forwarded to subgraphs when `context.userId` is set (valid non-refresh JWT); UI uses **`authRefresh.js`** + Apollo links in **`main.jsx`** for proactive refresh and 401 retry
+- **Catalog vs rating mutations:** `addRating` in **rating-service** requires **`x-user-id`** (`@RequestHeader`, throws if missing). **`addMovie`** on **catalog-service** has no such check; **streamflix-ui** only renders the add-movie form when logged in. Gateway **supergraph** polling: `SUPERGRAPH_POLL_MS` (default 10000) in `federation-gateway/index.js`.
 
 ## Ports Quick Reference
 
