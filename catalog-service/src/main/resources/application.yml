@@ -11,4 +11,15 @@ eureka:
   client:
     service-url:
       defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
-      
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"  # Opens all actuator endpoints (health, metrics, etc.)
+  tracing:
+    sampling:
+      probability: 1.0
+    export:
+      zipkin:
+        endpoint: ${ZIPKIN_URL:http://localhost:9411/api/v2/spans}

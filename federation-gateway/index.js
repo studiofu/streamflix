@@ -2,6 +2,9 @@
  * JWT auth must align with user-service JwtAuthHelper (same JWT_SECRET env or default
  * super-secret-streamflix-key, userId on access tokens). Refresh tokens use typ "refresh"
  * and are ignored here so they cannot authorize API calls.
+ *
+ * W3C traceparent / tracestate from the client are copied into GraphQL context and forwarded
+ * to each subgraph so Spring/Micrometer on the Java services can continue the trace.
  */
 const { ApolloServer } = require('@apollo/server');
 const { startStandaloneServer } = require('@apollo/server/standalone');
@@ -14,6 +17,12 @@ const {
 const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = process.env.JWT_SECRET || "super-secret-streamflix-key";
+
+/** First value if Express/Node coerces duplicate headers to an array. */
+function singleHeader(value) {
+  if (value == null) return undefined;
+  return Array.isArray(value) ? value[0] : value;
+}
 
 const gateway = new ApolloGateway({
   supergraphSdl: new IntrospectAndCompose({
@@ -32,6 +41,13 @@ const gateway = new ApolloGateway({
         if (context.userId) {
           request.http.headers.set('x-user-id', context.userId);
         }
+        // W3C Trace Context — propagate from browser/UI so Java subgraphs join the same trace
+        if (context.traceparent) {
+          request.http.headers.set('traceparent', context.traceparent);
+        }
+        if (context.tracestate) {
+          request.http.headers.set('tracestate', context.tracestate);
+        }
       },
     });
   },
@@ -44,6 +60,11 @@ const server = new ApolloServer({
 startStandaloneServer(server, {
   listen: { port: 4000 },
   context: async ({ req }) => {
+    const baseContext = {
+      traceparent: singleHeader(req.headers.traceparent),
+      tracestate: singleHeader(req.headers.tracestate),
+    };
+
     const authHeader = req.headers.authorization || '';
 
     if (authHeader.startsWith('Bearer ')) {
@@ -54,16 +75,16 @@ startStandaloneServer(server, {
         // Only accept access tokens at the gateway; refresh tokens must not authorize API calls.
         if (decoded.typ === "refresh") {
           console.warn("Ignoring refresh token in Authorization header");
-          return {};
+          return baseContext;
         }
-        return { userId: decoded.userId };
+        return { ...baseContext, userId: decoded.userId };
       } catch (err) {
         console.error("Invalid JWT Token!");
       }
-    }else {
+    } else {
       console.log("No JWT Token provided");
     }
-    return {};
+    return baseContext;
   },
 }).then(({ url }) => {
   console.log(`Gateway ready at ${url}`);

@@ -14,12 +14,13 @@ import {
   refreshAccessTokenSingleFlight,
   shouldProactiveRefresh,
 } from './lib/authRefresh.js';
+import { getTraceparentForOperation } from './lib/w3cTraceparent.js';
 
 const httpLink = new HttpLink({
   uri: GRAPHQL_HTTP_URI,
 });
 
-const authLink = new SetContextLink(async (prevContext) => {
+const authLink = new SetContextLink(async (prevContext, operation) => {
   let token = localStorage.getItem('token');
   const refreshToken = localStorage.getItem('refreshToken');
   if (refreshToken && (!token || shouldProactiveRefresh(token))) {
@@ -31,10 +32,13 @@ const authLink = new SetContextLink(async (prevContext) => {
     }
   }
 
+  const traceparent = getTraceparentForOperation(operation);
+
   return {
     headers: {
       ...prevContext.headers,
       authorization: token ? `Bearer ${token}` : '',
+      traceparent,
     },
   };
 });
