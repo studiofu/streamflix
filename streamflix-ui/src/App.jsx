@@ -1,6 +1,6 @@
 import { gql } from '@apollo/client';
 import { useQuery, useMutation } from '@apollo/client/react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 // --- GRAPHQL QUERIES & MUTATIONS ---
 const GET_MOVIES = gql`
@@ -9,12 +9,25 @@ const GET_MOVIES = gql`
   }
 `;
 
+// Login mutation: access token, refresh token, and user id
 const LOGIN_USER = gql`
   mutation Login($username: String!, $password: String!) {
-    login(username: $username, password: $password) { token userId }
+    login(username: $username, password: $password) {
+      token
+      refreshToken
+      userId
+    }
   }
 `;
 
+function readLoggedInUserFromStorage() {
+  const uid = localStorage.getItem('userId');
+  if (!uid) return null;
+  if (localStorage.getItem('refreshToken') || localStorage.getItem('token')) return uid;
+  return null;
+}
+
+// Add rating mutation to add a rating to a movie
 const ADD_RATING = gql`
   mutation AddRating($movieId: ID!, $stars: Int!) {
     addRating(movieId: $movieId, stars: $stars) { stars }
@@ -24,7 +37,13 @@ const ADD_RATING = gql`
 function App() {
   const [usernameInput, setUsernameInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
-  const [loggedInUser, setLoggedInUser] = useState(localStorage.getItem('userId'));
+  const [loggedInUser, setLoggedInUser] = useState(readLoggedInUserFromStorage);
+
+  useEffect(() => {
+    const onAuthFailed = () => setLoggedInUser(null);
+    window.addEventListener('streamflix-auth-failed', onAuthFailed);
+    return () => window.removeEventListener('streamflix-auth-failed', onAuthFailed);
+  }, []);
 
   // Apollo Hooks
   const { loading, error, data, refetch } = useQuery(GET_MOVIES);
@@ -36,10 +55,10 @@ function App() {
     e.preventDefault();
     try {
       const response = await loginMutation({ variables: { username: usernameInput, password: passwordInput } });
-      const { token, userId } = response.data.login;
-      
-      // Save to browser storage
+      const { token, refreshToken, userId } = response.data.login;
+
       localStorage.setItem('token', token);
+      localStorage.setItem('refreshToken', refreshToken);
       localStorage.setItem('userId', userId);
       setLoggedInUser(userId);
     } catch (err) {
@@ -50,6 +69,7 @@ function App() {
 
   const handleLogout = () => {
     localStorage.removeItem('token');
+    localStorage.removeItem('refreshToken');
     localStorage.removeItem('userId');
     setLoggedInUser(null);
   };

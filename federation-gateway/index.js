@@ -1,3 +1,8 @@
+/**
+ * JWT auth must align with user-service JwtAuthHelper (same JWT_SECRET env or default
+ * super-secret-streamflix-key, userId on access tokens). Refresh tokens use typ "refresh"
+ * and are ignored here so they cannot authorize API calls.
+ */
 const { ApolloServer } = require('@apollo/server');
 const { startStandaloneServer } = require('@apollo/server/standalone');
 const {
@@ -46,6 +51,11 @@ startStandaloneServer(server, {
       try {
         const decoded = jwt.verify(token, JWT_SECRET);
         console.log("Decoded JWT Token:", decoded);
+        // Only accept access tokens at the gateway; refresh tokens must not authorize API calls.
+        if (decoded.typ === "refresh") {
+          console.warn("Ignoring refresh token in Authorization header");
+          return {};
+        }
         return { userId: decoded.userId };
       } catch (err) {
         console.error("Invalid JWT Token!");
