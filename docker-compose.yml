@@ -106,11 +106,35 @@ services:
     image: openzipkin/zipkin:latest
     container_name: streamflix-zipkin
     ports:
-      - "9411:9411"       
+      - "9411:9411"
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.143.1
+    container_name: streamflix-otel-collector
+    command: ["--config=/etc/otel-collector/config.yaml"]
+    volumes:
+      - ./otel-collector/config.yaml:/etc/otel-collector/config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    depends_on:
+      - zipkin
 
   # ==========================================
   # METRICS & DASHBOARDS
   # ==========================================
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: streamflix-cadvisor
+    ports:
+      - "8099:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+    privileged: true
+
   prometheus:
     image: prom/prometheus:latest
     container_name: streamflix-prometheus
@@ -118,7 +142,9 @@ services:
       - "9090:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
-    
+    depends_on:
+      - cadvisor
+
   # Grafana
   # Sample JVM Dashboard is 4701, and you need to add DS_PROMETHEUS
   # as datasource and connect to the prometheus server.
