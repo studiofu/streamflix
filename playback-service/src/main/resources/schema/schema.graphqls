@@ -1,0 +1,33 @@
+type PlaybackState {
+  movieId: ID!
+  positionSeconds: Int!
+  durationSeconds: Int
+  completed: Boolean!
+  updatedAt: String!
+}
+
+type PlayHistoryEntry {
+  id: ID!
+  movieId: ID!
+  playedAt: String!
+}
+
+type Movie @key(fields: "id") @extends {
+  id: ID! @external
+  myPlayback: PlaybackState
+}
+
+type User @key(fields: "id") @extends {
+  id: ID! @external
+  continueWatching: [PlaybackState!]!
+  playHistory(limit: Int): [PlayHistoryEntry!]!
+}
+
+type Query {
+  playbackHealth: Boolean
+}
+
+type Mutation {
+  updatePlaybackProgress(movieId: ID!, positionSeconds: Int!, durationSeconds: Int): PlaybackState
+  recordPlay(movieId: ID!): PlayHistoryEntry
+}

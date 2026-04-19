@@ -30,6 +30,7 @@ const gateway = new ApolloGateway({
       { name: 'catalog', url: process.env.CATALOG_URL || 'http://localhost:8081/graphql' },
       { name: 'user', url: process.env.USER_URL || 'http://localhost:8082/graphql' },
       { name: 'rating', url: process.env.RATING_URL || 'http://localhost:8083/graphql' },
+      { name: 'playback', url: process.env.PLAYBACK_URL || 'http://localhost:8086/graphql' },
     ],
     // Re-introspect subgraphs periodically so new fields (e.g. Mutation.login) appear without a gateway restart.
     pollIntervalInMs: Number(process.env.SUPERGRAPH_POLL_MS) || 10_000,

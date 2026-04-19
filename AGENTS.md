@@ -11,6 +11,7 @@ catalog-service/     Movie catalog, MongoDB, Redis cache (port 8081)
 eureka-server/       Service discovery registry         (port 8761)
 federation-gateway/  Apollo Federation Gateway (Node)   (port 4000)
 rating-service/      Ratings, PostgreSQL + Kafka outbox  (port 8083)
+playback-service/    Simulated watch progress, PostgreSQL   (port 8086)
 scripts/             dev-up.ps1, dev-down.ps1
 streamflix-ui/       React 19 + Vite 8 SPA             (port 5173)
 user-service/        Users + JWT auth, PostgreSQL       (port 8082)
@@ -169,11 +170,11 @@ Group imports in this order (separated by blank lines):
 
 - All services communicate via **GraphQL** (Netflix DGS on Java subgraphs, Apollo Gateway federates them)
 - Service discovery via **Eureka**; distributed tracing via **Zipkin** + W3C Trace Context
-- Database per service: MongoDB (catalog), PostgreSQL (user, rating), Redis (analytics state **and** catalog **Spring Cache** for the `movies` query, cache name `moviesCatalog`)
+- Database per service: MongoDB (catalog), PostgreSQL (user, rating, playback), Redis (analytics state **and** catalog **Spring Cache** for the `movies` query, cache name `moviesCatalog`)
 - Kafka for event-driven communication (rating → analytics via outbox pattern)
 - Apollo Federation `@key` / `@extends` directives for cross-service entity resolution
 - JWT auth: tokens verified at gateway, `x-user-id` header forwarded to subgraphs when `context.userId` is set (valid non-refresh JWT); UI uses **`authRefresh.js`** + Apollo links in **`main.jsx`** for proactive refresh and 401 retry
-- **Catalog vs rating mutations:** `addRating` in **rating-service** requires **`x-user-id`** (`@RequestHeader`, throws if missing). **`addMovie`** on **catalog-service** has no such check; **streamflix-ui** only renders the add-movie form when logged in. Gateway **supergraph** polling: `SUPERGRAPH_POLL_MS` (default 10000) in `federation-gateway/index.js`.
+- **Catalog vs rating mutations:** `addRating` in **rating-service** requires **`x-user-id`** (`@RequestHeader`, throws if missing). **`updatePlaybackProgress`** and **`recordPlay`** in **playback-service** use the same header pattern. **`User.playHistory`** on **playback-service** only returns entries when the requested user id matches **`x-user-id`** (otherwise an empty list), mirroring **`continueWatching`**. **`addMovie`** on **catalog-service** has no such check; **streamflix-ui** only renders the add-movie form when logged in. Gateway **supergraph** polling: `SUPERGRAPH_POLL_MS` (default 10000) in `federation-gateway/index.js`.
 
 ## Ports Quick Reference
 
@@ -183,6 +184,7 @@ Group imports in this order (separated by blank lines):
 | Catalog | 8081 | http://localhost:8081/graphiql |
 | User | 8082 | http://localhost:8082/graphiql |
 | Rating | 8083 | http://localhost:8083/graphiql |
+| Playback | 8086 | http://localhost:8086/graphiql |
 | Analytics | 8084 | http://localhost:8084 |
 | Gateway | 4000 | http://localhost:4000 |
 | UI | 5173 | http://localhost:5173 |

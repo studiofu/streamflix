@@ -22,6 +22,10 @@ procs:
     shell: "mvn spring-boot:run"
     cwd: "rating-service"
 
+  playback:
+    shell: "mvn spring-boot:run"
+    cwd: "playback-service"
+
   analytics:
     shell: "mvn spring-boot:run"
     cwd: "analytics-service"

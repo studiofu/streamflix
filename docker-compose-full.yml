@@ -94,6 +94,19 @@ services:
       - kafka
       - eureka-server
 
+  playback-service:
+    build: ./playback-service
+    container_name: playback-service
+    ports:
+      - "8086:8086"
+    environment:
+      - POSTGRES_URL=jdbc:postgresql://postgres:5432/streamflix_db
+      - EUREKA_URL=http://eureka-server:8761/eureka/
+      - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
+    depends_on:
+      - postgres
+      - eureka-server
+
   analytics-service:
     build: ./analytics-service
     container_name: analytics-service
@@ -119,11 +132,13 @@ services:
       - CATALOG_URL=http://catalog-service:8081/graphql
       - USER_URL=http://user-service:8082/graphql
       - RATING_URL=http://rating-service:8083/graphql
+      - PLAYBACK_URL=http://playback-service:8086/graphql
     restart: on-failure   
     depends_on:
       - catalog-service
       - user-service
       - rating-service
+      - playback-service
 
 
 # ==========================================

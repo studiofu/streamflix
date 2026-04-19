@@ -11,6 +11,7 @@ scrape_configs:
         - 'host.docker.internal:8082'  # User Service
         - 'host.docker.internal:8083'  # Rating Service
         - 'host.docker.internal:8084'  # Analytics Service
+        - 'host.docker.internal:8086'  # Playback Service
         #- 'catalog-service:8081' # if using docker compose
         #- 'user-service:8082' # if using docker compose
         #- 'rating-service:8083' # if using docker compose
