@@ -10,21 +10,25 @@ analytics-service/   Kafka consumer, Redis store       (port 8084)
 catalog-service/     Movie catalog, MongoDB, Redis cache (port 8081)
 eureka-server/       Service discovery registry         (port 8761)
 federation-gateway/  Apollo Federation Gateway (Node)   (port 4000)
+otel-collector/      OpenTelemetry Collector config (OTLP → Zipkin)
 rating-service/      Ratings, PostgreSQL + Kafka outbox  (port 8083)
 playback-service/    Simulated watch progress, PostgreSQL   (port 8086)
 scripts/             dev-up.ps1, dev-down.ps1
 streamflix-ui/       React 19 + Vite 8 SPA             (port 5173)
 user-service/        Users + JWT auth, PostgreSQL       (port 8082)
+prometheus.yml       Prometheus scrape targets (JVM + cAdvisor)
 ```
 
 ## Build & Run Commands
 
-### Infrastructure (Postgres, MongoDB, Redis, Kafka, Zipkin)
+### Infrastructure (Postgres, MongoDB, Redis, Kafka, Zipkin, OpenTelemetry Collector, cAdvisor, Prometheus, Grafana)
 
 ```bash
 docker compose up -d --wait          # start infra; wait until healthy
 docker compose down                  # stop infra
 ```
+
+Compose also runs **OpenTelemetry Collector** ([`otel-collector/config.yaml`](otel-collector/config.yaml): OTLP in, Zipkin exporter out), **cAdvisor** (container metrics), **Prometheus** ([`prometheus.yml`](prometheus.yml): JVM targets + cAdvisor), and **Grafana**. On **Docker Desktop (macOS)**, cAdvisor metrics may be partial compared to Linux.
 
 ### Local development (all services)
 
@@ -133,7 +137,9 @@ Group imports in this order (separated by blank lines):
 
 - Use `application.yml` (not `.properties`)
 - Externalize with `${ENV_VAR:default}` pattern
-- Every service includes Eureka client + Actuator + Zipkin tracing config
+- Every service includes Eureka client + Actuator + tracing export config
+- **catalog-service** uses **`spring-boot-starter-opentelemetry`** and **`management.opentelemetry.tracing.export.otlp.endpoint`** (env **`OTLP_TRACES_ENDPOINT`**, default `http://localhost:4318/v1/traces`). Traces go to the **OTel Collector**, then to Zipkin.
+- **Other Java services** use **`spring-boot-starter-zipkin`** and **`management.tracing.export.zipkin.endpoint`** (env **`ZIPKIN_URL`**).
 - GraphQL schemas in `src/main/resources/schema/schema.graphqls`
 
 ## Code Style — StreamFlix UI (React)
@@ -169,7 +175,7 @@ Group imports in this order (separated by blank lines):
 ## Architecture Notes
 
 - All services communicate via **GraphQL** (Netflix DGS on Java subgraphs, Apollo Gateway federates them)
-- Service discovery via **Eureka**; distributed tracing via **Zipkin** + W3C Trace Context
+- Service discovery via **Eureka**; distributed tracing in **Zipkin** + W3C Trace Context (**catalog-service**: OTLP → **OpenTelemetry Collector** → Zipkin; **other subgraphs**: Brave/Micrometer → Zipkin HTTP API)
 - Database per service: MongoDB (catalog), PostgreSQL (user, rating, playback), Redis (analytics state **and** catalog **Spring Cache** for the `movies` query, cache name `moviesCatalog`)
 - Kafka for event-driven communication (rating → analytics via outbox pattern)
 - Apollo Federation `@key` / `@extends` directives for cross-service entity resolution
@@ -189,3 +195,8 @@ Group imports in this order (separated by blank lines):
 | Gateway | 4000 | http://localhost:4000 |
 | UI | 5173 | http://localhost:5173 |
 | Zipkin | 9411 | http://localhost:9411 |
+| OpenTelemetry Collector (OTLP gRPC) | 4317 | `localhost:4317` (from host when Compose maps ports) |
+| OpenTelemetry Collector (OTLP HTTP) | 4318 | `http://localhost:4318` (traces: `/v1/traces`) |
+| cAdvisor | 8099 | http://localhost:8099 |
+| Prometheus | 9090 | http://localhost:9090 |
+| Grafana | 3005 | http://localhost:3005 |
