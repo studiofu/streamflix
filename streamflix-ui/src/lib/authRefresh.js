@@ -40,6 +40,7 @@ export function refreshAccessTokenSingleFlight() {
             token
             refreshToken
             userId
+            username
           }
         }`,
         variables: { refreshToken: rt },
@@ -50,10 +51,11 @@ export function refreshAccessTokenSingleFlight() {
         if (body.errors?.length) {
           throw new Error(body.errors[0].message);
         }
-        const { token, refreshToken, userId } = body.data.refresh;
+        const { token, refreshToken, userId, username } = body.data.refresh;
         localStorage.setItem('token', token);
         localStorage.setItem('refreshToken', refreshToken);
         localStorage.setItem('userId', userId);
+        localStorage.setItem('username', username);
         window.dispatchEvent(new Event('streamflix-auth-refreshed'));
         return token;
       })
@@ -68,5 +70,6 @@ export function clearStoredSession() {
   localStorage.removeItem('token');
   localStorage.removeItem('refreshToken');
   localStorage.removeItem('userId');
+  localStorage.removeItem('username');
   window.dispatchEvent(new Event('streamflix-auth-failed'));
 }

@@ -13,8 +13,8 @@ type Query {
 
 
 type Mutation {
-    # Dummy login endpoint
     login(username: String!, password: String!): AuthPayload
+    register(username: String!, email: String!, password: String!): AuthPayload
     refresh(refreshToken: String!): AuthPayload
 }
 
@@ -22,5 +22,6 @@ type AuthPayload {
     token: String!
     refreshToken: String!
     userId: String!
+    username: String!
 }
 

@@ -1,0 +1,22 @@
+spring:
+  config:
+    activate:
+      on-profile: test
+  datasource:
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/streamflix_db?currentSchema=streamflix_test}
+    username: streamflix_user
+    password: streamflix_pass
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      jakarta.persistence.create-database-schemas: true
+      hibernate:
+        default_schema: streamflix_test
+
+eureka:
+  client:
+    enabled: false
+    register-with-eureka: false

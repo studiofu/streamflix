@@ -1,3 +1,3 @@
 package com.streamflix.user.dto;
 
-public record AuthPayload(String token, String refreshToken, String userId) {}
+public record AuthPayload(String token, String refreshToken, String userId, String username) {}

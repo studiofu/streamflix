@@ -21,13 +21,24 @@ const GET_MOVIES = gql`
   }
 `;
 
-// Login mutation: access token, refresh token, and user id
 const LOGIN_USER = gql`
   mutation Login($username: String!, $password: String!) {
     login(username: $username, password: $password) {
       token
       refreshToken
       userId
+      username
+    }
+  }
+`;
+
+const REGISTER_USER = gql`
+  mutation Register($username: String!, $email: String!, $password: String!) {
+    register(username: $username, email: $email, password: $password) {
+      token
+      refreshToken
+      userId
+      username
     }
   }
 `;
@@ -37,6 +48,10 @@ function readLoggedInUserFromStorage() {
   if (!uid) return null;
   if (localStorage.getItem('refreshToken') || localStorage.getItem('token')) return uid;
   return null;
+}
+
+function readStoredUsername() {
+  return localStorage.getItem('username') || null;
 }
 
 // Add rating mutation to add a rating to a movie
@@ -96,15 +111,27 @@ const GET_PLAY_HISTORY = gql`
 function App() {
   const [usernameInput, setUsernameInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
+  const [registerEmailInput, setRegisterEmailInput] = useState('');
+  const [authPanelMode, setAuthPanelMode] = useState('login');
   const [loggedInUser, setLoggedInUser] = useState(readLoggedInUserFromStorage);
+  const [displayUsername, setDisplayUsername] = useState(readStoredUsername);
   const [newMovieTitle, setNewMovieTitle] = useState('');
   const [newMovieDescription, setNewMovieDescription] = useState('');
   const [newMovieReleaseYear, setNewMovieReleaseYear] = useState('');
 
   useEffect(() => {
-    const onAuthFailed = () => setLoggedInUser(null);
+    const onAuthFailed = () => {
+      setLoggedInUser(null);
+      setDisplayUsername(null);
+    };
     window.addEventListener('streamflix-auth-failed', onAuthFailed);
     return () => window.removeEventListener('streamflix-auth-failed', onAuthFailed);
+  }, []);
+
+  useEffect(() => {
+    const onRefreshed = () => setDisplayUsername(readStoredUsername());
+    window.addEventListener('streamflix-auth-refreshed', onRefreshed);
+    return () => window.removeEventListener('streamflix-auth-refreshed', onRefreshed);
   }, []);
 
   // Apollo Hooks
@@ -114,25 +141,49 @@ function App() {
     skip: !loggedInUser,
   });
   const [loginMutation] = useMutation(LOGIN_USER);
+  const [registerMutation] = useMutation(REGISTER_USER);
   const [addRatingMutation] = useMutation(ADD_RATING);
   const [addMovieMutation, { loading: addingMovie }] = useMutation(ADD_MOVIE);
   const [updatePlaybackMutation] = useMutation(UPDATE_PLAYBACK);
   const [recordPlayMutation] = useMutation(RECORD_PLAY);
 
   // --- HANDLERS ---
+  const persistAuthPayload = (payload) => {
+    const { token, refreshToken, userId, username } = payload;
+    localStorage.setItem('token', token);
+    localStorage.setItem('refreshToken', refreshToken);
+    localStorage.setItem('userId', userId);
+    localStorage.setItem('username', username);
+    setLoggedInUser(userId);
+    setDisplayUsername(username);
+  };
+
   const handleLogin = async (e) => {
     e.preventDefault();
     try {
       const response = await loginMutation({ variables: { username: usernameInput, password: passwordInput } });
-      const { token, refreshToken, userId } = response.data.login;
-
-      localStorage.setItem('token', token);
-      localStorage.setItem('refreshToken', refreshToken);
-      localStorage.setItem('userId', userId);
-      setLoggedInUser(userId);
+      persistAuthPayload(response.data.login);
     } catch (err) {
-      alert("Login failed! Try 'password123'");
-      console.error("Login failed: " + err.message);
+      alert('Login failed: ' + err.message);
+      console.error('Login failed: ' + err.message);
+    }
+  };
+
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    try {
+      const response = await registerMutation({
+        variables: {
+          username: usernameInput,
+          email: registerEmailInput,
+          password: passwordInput,
+        },
+      });
+      persistAuthPayload(response.data.register);
+      setRegisterEmailInput('');
+    } catch (err) {
+      alert('Could not create account: ' + err.message);
+      console.error('Register failed: ' + err.message);
     }
   };
 
@@ -140,7 +191,9 @@ function App() {
     localStorage.removeItem('token');
     localStorage.removeItem('refreshToken');
     localStorage.removeItem('userId');
+    localStorage.removeItem('username');
     setLoggedInUser(null);
+    setDisplayUsername(null);
   };
 
   const handleRateMovie = async (movieId, stars) => {
@@ -242,15 +295,55 @@ function App() {
         <h1>🎬 StreamFlix Catalog</h1>
         {loggedInUser ? (
           <div>
-            <span style={{ marginRight: '15px' }}>Welcome, <strong>{loggedInUser}</strong>!</span>
+            <span style={{ marginRight: '15px' }}>Welcome, <strong>{displayUsername || 'Account'}</strong>!</span>
             <button onClick={handleLogout} style={{ padding: '8px 12px' }}>Logout</button>
           </div>
         ) : (
-          <form onSubmit={handleLogin} style={{ display: 'flex', gap: '10px' }}>
-            <input type="text" placeholder="Username" value={usernameInput} onChange={(e) => setUsernameInput(e.target.value)} required />
-            <input type="password" placeholder="Password (password123)" value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} required />
-            <button type="submit" style={{ padding: '8px 12px' }}>Login</button>
-          </form>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '10px' }}>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={() => setAuthPanelMode('login')}
+                style={{
+                  padding: '6px 12px',
+                  fontWeight: authPanelMode === 'login' ? 'bold' : 'normal',
+                  border: '1px solid #ccc',
+                  background: authPanelMode === 'login' ? '#eee' : '#fff',
+                }}
+              >
+                Login
+              </button>
+              <button
+                type="button"
+                onClick={() => setAuthPanelMode('register')}
+                style={{
+                  padding: '6px 12px',
+                  fontWeight: authPanelMode === 'register' ? 'bold' : 'normal',
+                  border: '1px solid #ccc',
+                  background: authPanelMode === 'register' ? '#eee' : '#fff',
+                }}
+              >
+                Create account
+              </button>
+            </div>
+            {authPanelMode === 'login' ? (
+              <form onSubmit={handleLogin} style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'flex-end' }}>
+                <input type="text" placeholder="Username" value={usernameInput} onChange={(e) => setUsernameInput(e.target.value)} required />
+                <input type="password" placeholder="Password" value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} required />
+                <button type="submit" style={{ padding: '8px 12px' }}>Login</button>
+              </form>
+            ) : (
+              <form onSubmit={handleRegister} style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'flex-end', maxWidth: '420px' }}>
+                <input type="text" placeholder="Username" value={usernameInput} onChange={(e) => setUsernameInput(e.target.value)} required />
+                <input type="email" placeholder="Email" value={registerEmailInput} onChange={(e) => setRegisterEmailInput(e.target.value)} required />
+                <input type="password" placeholder="Password (min 6 characters)" value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} required minLength={6} />
+                <button type="submit" style={{ padding: '8px 12px' }}>Create account</button>
+              </form>
+            )}
+            <span style={{ fontSize: '12px', color: '#666' }}>
+              Demo logins: admin / admin or netflix_fan_99 / password123
+            </span>
+          </div>
         )}
       </div>
 

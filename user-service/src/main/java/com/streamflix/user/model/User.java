@@ -14,6 +14,8 @@ public class User {
     private String username;
     private String email;
 
+    private String passwordHash;
+
     // Constructors
     public User() {}
 
@@ -29,4 +31,6 @@ public class User {
     public void setUsername(String username) { this.username = username; }
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
+    public String getPasswordHash() { return passwordHash; }
+    public void setPasswordHash(String passwordHash) { this.passwordHash = passwordHash; }
 }
