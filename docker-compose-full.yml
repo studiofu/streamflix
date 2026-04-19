@@ -61,10 +61,11 @@ services:
     environment:
       - MONGO_URI=mongodb://mongodb:27017/streamflix_db
       - EUREKA_URL=http://eureka-server:8761/eureka/
-      - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
+      - OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
     depends_on:
       - mongodb
       - eureka-server
+      - otel-collector
 
   user-service:
     build: ./user-service
@@ -158,4 +159,16 @@ services:
     image: openzipkin/zipkin:latest
     container_name: streamflix-zipkin
     ports:
-      - "9411:9411"      
+      - "9411:9411"
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.143.1
+    container_name: streamflix-otel-collector
+    command: ["--config=/etc/otel-collector/config.yaml"]
+    volumes:
+      - ./otel-collector/config.yaml:/etc/otel-collector/config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    depends_on:
+      - zipkin

@@ -17,3 +17,7 @@ scrape_configs:
         #- 'rating-service:8083' # if using docker compose
         #- 'analytics-service:8084' # if using docker compose
         #- 'admin-service:8085' # if using docker compose
+
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
