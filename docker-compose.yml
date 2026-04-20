@@ -102,11 +102,28 @@ services:
       kafka:
         condition: service_healthy
 
-  zipkin:
-    image: openzipkin/zipkin:latest
-    container_name: streamflix-zipkin
+  # ==========================================
+  # TRACES (Tempo) + LOGS (Loki)
+  # ==========================================
+  tempo:
+    image: grafana/tempo:2.6.1
+    container_name: streamflix-tempo
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo_data:/var/tempo
     ports:
-      - "9411:9411"
+      - "3200:3200" # Tempo HTTP query API
+
+  loki:
+    image: grafana/loki:3.2.1
+    container_name: streamflix-loki
+    command: ["-config.file=/etc/loki/loki-config.yaml"]
+    volumes:
+      - ./loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - loki_data:/loki
+    ports:
+      - "3100:3100"
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.143.1
@@ -118,7 +135,8 @@ services:
       - "4317:4317"
       - "4318:4318"
     depends_on:
-      - zipkin
+      - tempo
+      - loki
 
   # ==========================================
   # METRICS & DASHBOARDS
@@ -155,11 +173,16 @@ services:
       - "3005:3000"
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
       - prometheus
+      - tempo
+      - loki
 
 volumes:
   postgres_data:
   mongo_data:
   kafka_data:
   grafana_data:
+  tempo_data:
+  loki_data:

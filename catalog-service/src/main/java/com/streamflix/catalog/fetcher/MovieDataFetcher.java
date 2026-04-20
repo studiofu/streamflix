@@ -5,13 +5,14 @@ import com.netflix.graphql.dgs.DgsEntityFetcher;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
-import com.streamflix.catalog.model.Movie;
-import com.streamflix.catalog.repository.MovieRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+
+import com.streamflix.catalog.model.Movie;
+import com.streamflix.catalog.service.MovieCatalogService;
 
 import java.util.List;
 import java.util.Map;
@@ -29,20 +30,20 @@ public class MovieDataFetcher {
     private static final Logger log = LoggerFactory.getLogger(MovieDataFetcher.class);
 
     @Autowired
-    private MovieRepository movieRepository;
+    private MovieCatalogService movieCatalogService;
 
     // Maps to "movies: [Movie]" in schema.graphqls
     @DgsQuery
     @Cacheable(value = "moviesCatalog")
     public List<Movie> movies() {
         log.info("Fetching movies from MongoDB");
-        return movieRepository.findAll();
+        return movieCatalogService.findAllMovies();
     }
 
     // Maps to "movie(id: ID!): Movie" in schema.graphqls
     @DgsQuery
     public Movie movie(@InputArgument String id) {
-        return movieRepository.findById(id).orElse(null);
+        return movieCatalogService.findMovieById(id).orElse(null);
     }
 
     @DgsMutation
@@ -52,13 +53,13 @@ public class MovieDataFetcher {
             @InputArgument String description,
             @InputArgument Integer releaseYear) {
         Movie movie = new Movie(title, description, releaseYear);
-        return movieRepository.save(movie);
+        return movieCatalogService.saveMovie(movie);
     }
 
     // Required for Apollo Federation (@key directive)
     @DgsEntityFetcher(name = "Movie")
     public Movie movieEntityFetcher(Map<String, Object> values) {
         String id = (String) values.get("id");
-        return movieRepository.findById(id).orElse(null);
+        return movieCatalogService.findMovieById(id).orElse(null);
     }
 }

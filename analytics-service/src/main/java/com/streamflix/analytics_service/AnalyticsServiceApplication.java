@@ -7,7 +7,9 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.ComponentScan;
 
 
-@ComponentScan(basePackages = {"com.streamflix.analytics.service"})
+@ComponentScan(basePackages = {
+		"com.streamflix.analytics.service",
+		"com.streamflix.analytics_service" })
 @SpringBootApplication
 public class AnalyticsServiceApplication {
 

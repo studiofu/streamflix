@@ -1,6 +1,6 @@
 # Streamflix Workspace
 
-A **microservices** demo inspired by streaming platforms: **GraphQL subgraphs** (Netflix DGS) register with **Eureka**, a **Node.js Apollo Federation gateway** composes a single supergraph for the **React** UI, with **Kafka**-driven analytics, **PostgreSQL** / **MongoDB** persistence, **Redis** for analytics and for **catalog** Spring Cache (`moviesCatalog`), and **distributed tracing** ending in **Zipkin** (**catalog-service** exports **OTLP** via the **OpenTelemetry Collector**; other Java services use **Micrometer / Zipkin** directly). **Prometheus** scrapes JVM metrics and **cAdvisor** container metrics; **Grafana** can visualize them.
+A **microservices** demo inspired by streaming platforms: **GraphQL subgraphs** (Netflix DGS) register with **Eureka**, a **Node.js Apollo Federation gateway** composes a single supergraph for the **React** UI, with **Kafka**-driven analytics, **PostgreSQL** / **MongoDB** persistence, **Redis** for analytics and for **catalog** Spring Cache (`moviesCatalog`), and **OpenTelemetry**-based observability: every Java service exports **traces** and **logs** via OTLP to the **OpenTelemetry Collector**, which fans out to **Grafana Tempo** (traces) and **Grafana Loki** (logs). **Prometheus** scrapes JVM and **cAdvisor** container metrics; **Grafana** is the single pane for metrics, traces, and logs (with trace↔log correlation).
 
 ---
 
@@ -32,7 +32,7 @@ _Spring Boot Admin is optional; it only monitors registered apps via Eureka._
 1. The browser talks only to the **federation gateway** (`http://localhost:4000/` by default) for GraphQL.
 2. The gateway **introspects** the three subgraphs on a short interval, builds the **supergraph SDL**, and **routes** each field to the correct service.
 3. **JWT**: The gateway validates `Authorization: Bearer …` with `JWT_SECRET` (default aligns with user-service). It forwards **`x-user-id`** to subgraphs for authenticated operations. **Refresh** tokens (`typ: refresh`) are ignored for API auth.
-4. **Tracing**: `traceparent` / `tracestate` from the client are forwarded to subgraphs. **catalog-service** uses **Spring Boot OpenTelemetry** and sends spans (**OTLP/HTTP**) to the collector (`localhost:4318` from the host when Compose is up); the collector forwards to **Zipkin**. Other subgraphs still report to Zipkin’s HTTP API (`/api/v2/spans`) via **`spring-boot-starter-zipkin`**, so traces can be correlated in one Zipkin UI.
+4. **Tracing & logs**: `traceparent` / `tracestate` from the client are forwarded to subgraphs. **All Java services** use **`spring-boot-starter-opentelemetry`** and send spans and logs (**OTLP/HTTP**) to the collector (`localhost:4318` from the host when Compose is up). The collector fans out traces to **Grafana Tempo** and logs to **Grafana Loki**. Log records are automatically enriched with `trace_id` / `span_id`, so Grafana can jump from a Tempo span to the matching Loki logs and back.
 5. **rating-service** can publish events to **Kafka**; **analytics-service** consumes them and uses **Redis** (see `docker-compose.yml` for local Redis). **catalog-service** uses the same Redis instance (via `REDIS_HOST`) for **Spring Cache** on the `movies` query (`@Cacheable` / `@CacheEvict` on `addMovie`).
 
 ---
@@ -46,9 +46,9 @@ _Spring Boot Admin is optional; it only monitors registered apps via Eureka._
 | **GraphQL (Java)** | **Netflix DGS 11** on **Spring GraphQL** (`/graphql`) |
 | **GraphQL (gateway)** | **Apollo Server 5**, **Apollo Gateway 2** (federation) |
 | **Service discovery** | **Netflix Eureka** |
-| **Ops / monitoring (Java)** | **Spring Boot Actuator**, **Prometheus** registry; **catalog-service**: **OpenTelemetry** → **OTLP** → collector → **Zipkin**; **other Java services**: **Micrometer Tracing** → **Zipkin** |
+| **Ops / monitoring (Java)** | **Spring Boot Actuator**, **Prometheus** registry; **all Java services**: **OpenTelemetry** → **OTLP** → **OpenTelemetry Collector** → **Tempo** (traces) + **Loki** (logs) |
 | **Container metrics** | **cAdvisor** (scraped by Prometheus) |
-| **Dashboards** | **Grafana** (optional; Prometheus datasource) |
+| **Dashboards** | **Grafana** (provisioned with Prometheus, Tempo, and Loki datasources; trace↔log correlation) |
 | **Admin UI** | **Spring Boot Admin 4** (optional `admin-service`) |
 | **Databases** | **PostgreSQL 16** (user, rating), **MongoDB 7** (catalog) |
 | **Messaging / cache** | **Apache Kafka 3.7** (KRaft), **Redis 7** (analytics + catalog Spring Cache) |
@@ -62,7 +62,7 @@ _Spring Boot Admin is optional; it only monitors registered apps via Eureka._
 | Service | Port | Role |
 |---------|------|------|
 | **eureka-server** | 8761 | Eureka registry. Microservices register here; dashboard lists instances. Does not register itself. |
-| **catalog-service** | 8081 | DGS **catalog** subgraph. **MongoDB** (`streamflix_db`). Queries `movies` / `movie`; mutation **`addMovie`** (title, optional description/release year). **Spring Cache** on Redis: `movies` is `@Cacheable` (`moviesCatalog`); **`addMovie`** evicts that cache. **`spring-boot-starter-kafka`** on the classpath (no producer wired in this module yet). **Tracing**: **`spring-boot-starter-opentelemetry`**, OTLP trace export (see **`OTLP_TRACES_ENDPOINT`**). **Prometheus** registry via Actuator. GraphQL at `/graphql`. |
+| **catalog-service** | 8081 | DGS **catalog** subgraph. **MongoDB** (`streamflix_db`). Queries `movies` / `movie`; mutation **`addMovie`** (title, optional description/release year). **Spring Cache** on Redis: `movies` is `@Cacheable` (`moviesCatalog`); **`addMovie`** evicts that cache. **`spring-boot-starter-kafka`** on the classpath (no producer wired in this module yet). **Tracing & logs**: **`spring-boot-starter-opentelemetry`**, OTLP export (see **`OTLP_TRACES_ENDPOINT`** / **`OTLP_LOGS_ENDPOINT`**). **Prometheus** registry via Actuator. GraphQL at `/graphql`. |
 | **user-service** | 8082 | DGS **user** subgraph. **PostgreSQL** + JPA. Auth (JWT via `java-jwt`). GraphQL at `/graphql`. |
 | **rating-service** | 8083 | DGS **rating** subgraph. **PostgreSQL** + JPA. **Kafka** producer/consumer patterns for ratings-related events. GraphQL at `/graphql`. |
 | **analytics-service** | 8084 | **Kafka** consumer, **Redis**, REST/actuator. No DGS in POM—event-driven analytics and health for admin. |
@@ -70,7 +70,7 @@ _Spring Boot Admin is optional; it only monitors registered apps via Eureka._
 | **federation-gateway** | 4000 | **Apollo Federation** supergraph. Subgraph URLs via `CATALOG_URL`, `USER_URL`, `RATING_URL` (defaults: `localhost` subgraph ports). |
 | **streamflix-ui** | 5173 (dev) | **Vite** dev server; GraphQL target from `VITE_GRAPHQL_URI` (default `http://localhost:4000/`). **Apollo Client** sends `Authorization` and **proactive token refresh** (`Refresh` mutation in `src/lib/authRefresh.js`). Single-page catalog: list movies (title, description, release year, federated ratings), **login**, **add movie** when logged in (`addMovie`; catalog does not enforce `x-user-id`), **rate** when logged in (`addRating`; requires gateway JWT so rating-service receives `x-user-id`). |
 
-**Infrastructure-only containers** (`docker-compose.yml`): PostgreSQL, MongoDB, Redis, RedisInsight (`8001`), Kafka, Kafka UI (`8090`), Zipkin (`9411`), **OpenTelemetry Collector** (OTLP **4317** gRPC, **4318** HTTP), **cAdvisor** (`8099`), **Prometheus** (`9090`), **Grafana** (`3005`). Collector config: [`otel-collector/config.yaml`](otel-collector/config.yaml) (forwards traces to Zipkin).
+**Infrastructure-only containers** (`docker-compose.yml`): PostgreSQL, MongoDB, Redis, RedisInsight (`8001`), Kafka, Kafka UI (`8090`), **OpenTelemetry Collector** (OTLP **4317** gRPC, **4318** HTTP), **Grafana Tempo** (`3200`), **Grafana Loki** (`3100`), **cAdvisor** (`8099`), **Prometheus** (`9090`), **Grafana** (`3005`). Collector config: [`otel-collector/config.yaml`](otel-collector/config.yaml) (forwards traces to Tempo, logs to Loki). Tempo config: [`tempo/tempo.yaml`](tempo/tempo.yaml). Loki config: [`loki/loki-config.yaml`](loki/loki-config.yaml). Grafana datasource provisioning: [`grafana/provisioning/datasources/datasources.yaml`](grafana/provisioning/datasources/datasources.yaml).
 
 ---
 
@@ -94,7 +94,7 @@ _Spring Boot Admin is optional; it only monitors registered apps via Eureka._
    docker compose up -d --wait
    ```
 
-   This uses `docker-compose.yml`: Postgres, Mongo, Redis, Kafka (+ UIs), Zipkin, OTel collector, cAdvisor, Prometheus, Grafana.
+   This uses `docker-compose.yml`: Postgres, Mongo, Redis, Kafka (+ UIs), OTel collector, Tempo, Loki, cAdvisor, Prometheus, Grafana.
 
 2. **Start Eureka**, then **subgraphs**, then **gateway**, then **UI** (order matters the first time so registration and introspection succeed).
 
@@ -141,11 +141,12 @@ UI is mapped to **http://localhost:3000** (Nginx). Gateway inside the compose ne
 | http://localhost:8085 | Spring Boot Admin (if `admin-service` is running) |
 | http://localhost:4000/ | Apollo Federation GraphQL (gateway) |
 | http://localhost:5173/ | Streamflix UI (Vite dev; port may vary—check terminal) |
-| http://localhost:9411 | Zipkin |
-| http://localhost:4318 | OTLP/HTTP ingest (OpenTelemetry Collector; traces path `/v1/traces`) |
+| http://localhost:4318 | OTLP/HTTP ingest (OpenTelemetry Collector; traces `/v1/traces`, logs `/v1/logs`) |
+| http://localhost:3200 | Grafana Tempo (trace query API) |
+| http://localhost:3100 | Grafana Loki (log query API) |
 | http://localhost:8099 | cAdvisor (container metrics UI) |
 | http://localhost:9090 | Prometheus |
-| http://localhost:3005 | Grafana |
+| http://localhost:3005 | Grafana (Prometheus + Tempo + Loki pre-provisioned) |
 | http://localhost:8090 | Kafka UI |
 | http://localhost:8001 | RedisInsight |
 
@@ -161,8 +162,8 @@ UI is mapped to **http://localhost:3000** (Nginx). Gateway inside the compose ne
 | `KAFKA_URL` | rating-service, analytics-service | Broker list (`localhost:9094` from host; `kafka:9092` inside Docker network) |
 | `REDIS_HOST` | catalog-service, analytics-service | Redis host (default `localhost`; catalog uses it for `RedisCacheManager`) |
 | `SUPERGRAPH_POLL_MS` | federation-gateway | Subgraph introspection interval in ms (default `10000`) |
-| `ZIPKIN_URL` | Java services (except catalog) | Zipkin span endpoint (`…/api/v2/spans`) |
-| `OTLP_TRACES_ENDPOINT` | catalog-service | OTLP/HTTP traces endpoint (default `http://localhost:4318/v1/traces`; in `docker-compose-full` use `http://otel-collector:4318/v1/traces`) |
+| `OTLP_TRACES_ENDPOINT` | all Java services | OTLP/HTTP traces endpoint (default `http://localhost:4318/v1/traces`; in `docker-compose-full` use `http://otel-collector:4318/v1/traces`) |
+| `OTLP_LOGS_ENDPOINT` | all Java services | OTLP/HTTP logs endpoint (default `http://localhost:4318/v1/logs`; in `docker-compose-full` use `http://otel-collector:4318/v1/logs`) |
 | `CATALOG_URL`, `USER_URL`, `RATING_URL` | federation-gateway | Subgraph GraphQL endpoints |
 | `JWT_SECRET` | gateway + user-service | Shared secret for JWT (gateway default must match user-service for auth) |
 | `VITE_GRAPHQL_URI` | streamflix-ui | Gateway URL for Apollo Client |
@@ -188,9 +189,12 @@ streamflix-workspace/
 ├── user-service/           # DGS + Postgres + Eureka + JWT
 ├── streamflix-ui/          # React + Vite + Apollo Client
 ├── scripts/dev-up.ps1      # Docker infra + mprocs
-├── otel-collector/         # Collector config (OTLP → Zipkin)
+├── otel-collector/         # Collector config (OTLP → Tempo traces, Loki logs)
+├── tempo/                  # Tempo config (OTLP receiver, local storage)
+├── loki/                   # Loki config (filesystem, single binary)
+├── grafana/provisioning/   # Grafana datasources (Prometheus, Tempo, Loki)
 ├── prometheus.yml          # Prometheus scrape config (JVM + cAdvisor)
-├── docker-compose.yml      # Dev infrastructure + Zipkin + OTel collector + cAdvisor + Prometheus/Grafana + Kafka/Redis UIs
+├── docker-compose.yml      # Dev infrastructure + OTel collector + Tempo + Loki + cAdvisor + Prometheus/Grafana + Kafka/Redis UIs
 ├── docker-compose-full.yml # Optional: all services containerized
 └── mprocs.yaml             # Multi-process dev layout
 ```
