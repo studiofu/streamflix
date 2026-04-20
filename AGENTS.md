@@ -7,7 +7,7 @@ This is a microservices streaming platform built with Spring Boot (Java 25), Apo
 ```
 admin-service/       Spring Boot Admin dashboard      (port 8085)
 analytics-service/   Kafka consumer, Redis store       (port 8084)
-catalog-service/     Movie catalog, MongoDB, Redis cache (port 8081)
+catalog-service/     Movie catalog, MongoDB, Redis cache, Resilience4j CB (port 8081)
 eureka-server/       Service discovery registry         (port 8761)
 federation-gateway/  Apollo Federation Gateway (Node)   (port 4000)
 otel-collector/      OpenTelemetry Collector config (OTLP → Zipkin)
@@ -142,6 +142,15 @@ Group imports in this order (separated by blank lines):
 - All `application.yml` files include a `logging.pattern.correlation` that injects `%X{trace_id}` / `%X{span_id}` from MDC so log messages are correlated with spans.
 - GraphQL schemas in `src/main/resources/schema/schema.graphqls`
 
+### Resilience / circuit breakers
+
+- Only **catalog-service** currently uses a circuit breaker. Dependency: `spring-cloud-starter-circuitbreaker-resilience4j` (version from `spring-cloud-dependencies` BOM).
+- Style: **programmatic**, not annotation-based. Inject `Resilience4JCircuitBreakerFactory` and call `circuitBreakerFactory.create("mongoCatalog").run(supplier, fallback)`. This avoids AOP ordering conflicts with `@Cacheable` on `MovieDataFetcher.movies()`.
+- Code lives in `com.streamflix.catalog.service.MovieCatalogService`; `MovieDataFetcher` delegates reads to it and keeps `@Cacheable("moviesCatalog")` on the fetcher.
+- Fallbacks (reads only): `findAllMovies()` → `List.of()`; `findMovieById(id)` → `Optional.empty()` (fetcher maps to `null`). Writes (`addMovie` → `saveMovie`) are **not** wrapped so failures surface to the client.
+- Config lives under `resilience4j.circuitbreaker.instances.mongoCatalog` in [`catalog-service/src/main/resources/application.yml`](catalog-service/src/main/resources/application.yml); health is enabled via `management.health.circuitbreakers.enabled: true`. Metrics exported as `resilience4j_circuitbreaker_*` on `/actuator/prometheus`.
+- When adding breakers to other services, prefer the same **programmatic** approach if the same method is also `@Cacheable` / `@Transactional`; otherwise `@CircuitBreaker(name=..., fallbackMethod=...)` on a dedicated service method is acceptable.
+
 ## Code Style — StreamFlix UI (React)
 
 ### Conventions
@@ -181,6 +190,7 @@ Group imports in this order (separated by blank lines):
 - Apollo Federation `@key` / `@extends` directives for cross-service entity resolution
 - JWT auth: tokens verified at gateway, `x-user-id` header forwarded to subgraphs when `context.userId` is set (valid non-refresh JWT); UI uses **`authRefresh.js`** + Apollo links in **`main.jsx`** for proactive refresh and 401 retry
 - **Catalog vs rating mutations:** `addRating` in **rating-service** requires **`x-user-id`** (`@RequestHeader`, throws if missing). **`updatePlaybackProgress`** and **`recordPlay`** in **playback-service** use the same header pattern. **`User.playHistory`** on **playback-service** only returns entries when the requested user id matches **`x-user-id`** (otherwise an empty list), mirroring **`continueWatching`**. **`addMovie`** on **catalog-service** has no such check; **streamflix-ui** only renders the add-movie form when logged in. Gateway **supergraph** polling: `SUPERGRAPH_POLL_MS` (default 10000) in `federation-gateway/index.js`.
+- **Catalog resilience:** Mongo reads go through **Resilience4j** circuit breaker **`mongoCatalog`** in **`MovieCatalogService`** via Spring Cloud's `Resilience4JCircuitBreakerFactory`. Fallbacks keep the GraphQL shape stable (empty list / `null`) when Mongo is unavailable; `addMovie` stays outside the breaker.
 
 ## Ports Quick Reference
 

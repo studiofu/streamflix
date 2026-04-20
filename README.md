@@ -34,6 +34,7 @@ _Spring Boot Admin is optional; it only monitors registered apps via Eureka._
 3. **JWT**: The gateway validates `Authorization: Bearer …` with `JWT_SECRET` (default aligns with user-service). It forwards **`x-user-id`** to subgraphs for authenticated operations. **Refresh** tokens (`typ: refresh`) are ignored for API auth.
 4. **Tracing & logs**: `traceparent` / `tracestate` from the client are forwarded to subgraphs. **All Java services** use **`spring-boot-starter-opentelemetry`** and send spans and logs (**OTLP/HTTP**) to the collector (`localhost:4318` from the host when Compose is up). The collector fans out traces to **Grafana Tempo** and logs to **Grafana Loki**. Log records are automatically enriched with `trace_id` / `span_id`, so Grafana can jump from a Tempo span to the matching Loki logs and back.
 5. **rating-service** can publish events to **Kafka**; **analytics-service** consumes them and uses **Redis** (see `docker-compose.yml` for local Redis). **catalog-service** uses the same Redis instance (via `REDIS_HOST`) for **Spring Cache** on the `movies` query (`@Cacheable` / `@CacheEvict` on `addMovie`).
+6. **Resilience (catalog)**: catalog-service wraps MongoDB **reads** (`movies`, `movie`, federation entity fetch) in a **Resilience4j circuit breaker** (Spring Cloud Circuit Breaker abstraction, instance **`mongoCatalog`**) with safe fallbacks (`movies` → empty list, `movie` → `null`). Writes (`addMovie`) are **not** wrapped. Breaker state is exposed via Actuator health and Micrometer / Prometheus metrics (`resilience4j_circuitbreaker_*`).
 
 ---
 
@@ -47,6 +48,7 @@ _Spring Boot Admin is optional; it only monitors registered apps via Eureka._
 | **GraphQL (gateway)** | **Apollo Server 5**, **Apollo Gateway 2** (federation) |
 | **Service discovery** | **Netflix Eureka** |
 | **Ops / monitoring (Java)** | **Spring Boot Actuator**, **Prometheus** registry; **all Java services**: **OpenTelemetry** → **OTLP** → **OpenTelemetry Collector** → **Tempo** (traces) + **Loki** (logs) |
+| **Resilience (Java)** | **Spring Cloud Circuit Breaker** + **Resilience4j** (**catalog-service** only, instance `mongoCatalog`) |
 | **Container metrics** | **cAdvisor** (scraped by Prometheus) |
 | **Dashboards** | **Grafana** (provisioned with Prometheus, Tempo, and Loki datasources; trace↔log correlation) |
 | **Admin UI** | **Spring Boot Admin 4** (optional `admin-service`) |
@@ -62,7 +64,7 @@ _Spring Boot Admin is optional; it only monitors registered apps via Eureka._
 | Service | Port | Role |
 |---------|------|------|
 | **eureka-server** | 8761 | Eureka registry. Microservices register here; dashboard lists instances. Does not register itself. |
-| **catalog-service** | 8081 | DGS **catalog** subgraph. **MongoDB** (`streamflix_db`). Queries `movies` / `movie`; mutation **`addMovie`** (title, optional description/release year). **Spring Cache** on Redis: `movies` is `@Cacheable` (`moviesCatalog`); **`addMovie`** evicts that cache. **`spring-boot-starter-kafka`** on the classpath (no producer wired in this module yet). **Tracing & logs**: **`spring-boot-starter-opentelemetry`**, OTLP export (see **`OTLP_TRACES_ENDPOINT`** / **`OTLP_LOGS_ENDPOINT`**). **Prometheus** registry via Actuator. GraphQL at `/graphql`. |
+| **catalog-service** | 8081 | DGS **catalog** subgraph. **MongoDB** (`streamflix_db`). Queries `movies` / `movie`; mutation **`addMovie`** (title, optional description/release year). **Spring Cache** on Redis: `movies` is `@Cacheable` (`moviesCatalog`); **`addMovie`** evicts that cache. **Resilience4j circuit breaker** (`mongoCatalog`) wraps Mongo reads inside `MovieCatalogService` via programmatic `Resilience4JCircuitBreakerFactory.create(...).run(...)`; fallbacks return **empty list** (`movies`) or **empty `Optional`** (`movie` / entity fetch). Writes (`addMovie`) are not wrapped. Breaker state is surfaced through Actuator health + Prometheus metrics. **`spring-boot-starter-kafka`** on the classpath (no producer wired in this module yet). **Tracing & logs**: **`spring-boot-starter-opentelemetry`**, OTLP export (see **`OTLP_TRACES_ENDPOINT`** / **`OTLP_LOGS_ENDPOINT`**). **Prometheus** registry via Actuator. GraphQL at `/graphql`. |
 | **user-service** | 8082 | DGS **user** subgraph. **PostgreSQL** + JPA. Auth (JWT via `java-jwt`). GraphQL at `/graphql`. |
 | **rating-service** | 8083 | DGS **rating** subgraph. **PostgreSQL** + JPA. **Kafka** producer/consumer patterns for ratings-related events. GraphQL at `/graphql`. |
 | **analytics-service** | 8084 | **Kafka** consumer, **Redis**, REST/actuator. No DGS in POM—event-driven analytics and health for admin. |
@@ -182,7 +184,7 @@ If **Spring Boot Admin** or clients cannot resolve hostnames like `*.mshome.net`
 streamflix-workspace/
 ├── admin-service/          # Spring Boot Admin + Eureka client
 ├── analytics-service/      # Kafka + Redis + Eureka
-├── catalog-service/        # DGS + MongoDB + Redis cache + Eureka
+├── catalog-service/        # DGS + MongoDB + Redis cache + Resilience4j CB + Eureka
 ├── eureka-server/          # Eureka registry
 ├── federation-gateway/     # Node Apollo Gateway
 ├── rating-service/         # DGS + Postgres + Kafka + Eureka
