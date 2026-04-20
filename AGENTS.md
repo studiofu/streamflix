@@ -21,14 +21,14 @@ prometheus.yml       Prometheus scrape targets (JVM + cAdvisor)
 
 ## Build & Run Commands
 
-### Infrastructure (Postgres, MongoDB, Redis, Kafka, Zipkin, OpenTelemetry Collector, cAdvisor, Prometheus, Grafana)
+### Infrastructure (Postgres, MongoDB, Redis, Kafka, OpenTelemetry Collector, Tempo, Loki, cAdvisor, Prometheus, Grafana)
 
 ```bash
 docker compose up -d --wait          # start infra; wait until healthy
 docker compose down                  # stop infra
 ```
 
-Compose also runs **OpenTelemetry Collector** ([`otel-collector/config.yaml`](otel-collector/config.yaml): OTLP in, Zipkin exporter out), **cAdvisor** (container metrics), **Prometheus** ([`prometheus.yml`](prometheus.yml): JVM targets + cAdvisor), and **Grafana**. On **Docker Desktop (macOS)**, cAdvisor metrics may be partial compared to Linux.
+Compose also runs **OpenTelemetry Collector** ([`otel-collector/config.yaml`](otel-collector/config.yaml): OTLP in, Tempo + Loki exporters out), **Grafana Tempo** ([`tempo/tempo.yaml`](tempo/tempo.yaml)), **Grafana Loki** ([`loki/loki-config.yaml`](loki/loki-config.yaml)), **cAdvisor** (container metrics), **Prometheus** ([`prometheus.yml`](prometheus.yml): JVM targets + cAdvisor), and **Grafana** (datasources provisioned from [`grafana/provisioning/datasources/datasources.yaml`](grafana/provisioning/datasources/datasources.yaml)). On **Docker Desktop (macOS)**, cAdvisor metrics may be partial compared to Linux.
 
 ### Local development (all services)
 
@@ -138,8 +138,8 @@ Group imports in this order (separated by blank lines):
 - Use `application.yml` (not `.properties`)
 - Externalize with `${ENV_VAR:default}` pattern
 - Every service includes Eureka client + Actuator + tracing export config
-- **catalog-service** uses **`spring-boot-starter-opentelemetry`** and **`management.opentelemetry.tracing.export.otlp.endpoint`** (env **`OTLP_TRACES_ENDPOINT`**, default `http://localhost:4318/v1/traces`). Traces go to the **OTel Collector**, then to Zipkin.
-- **Other Java services** use **`spring-boot-starter-zipkin`** and **`management.tracing.export.zipkin.endpoint`** (env **`ZIPKIN_URL`**).
+- **All Java services** use **`spring-boot-starter-opentelemetry`** with both **`management.opentelemetry.tracing.export.otlp.endpoint`** (env **`OTLP_TRACES_ENDPOINT`**, default `http://localhost:4318/v1/traces`) and **`management.opentelemetry.logging.export.otlp.endpoint`** (env **`OTLP_LOGS_ENDPOINT`**, default `http://localhost:4318/v1/logs`). Traces and logs go to the **OTel Collector**, which fans out to **Grafana Tempo** (traces) and **Grafana Loki** (logs).
+- All `application.yml` files include a `logging.pattern.correlation` that injects `%X{trace_id}` / `%X{span_id}` from MDC so log messages are correlated with spans.
 - GraphQL schemas in `src/main/resources/schema/schema.graphqls`
 
 ## Code Style — StreamFlix UI (React)
@@ -175,7 +175,7 @@ Group imports in this order (separated by blank lines):
 ## Architecture Notes
 
 - All services communicate via **GraphQL** (Netflix DGS on Java subgraphs, Apollo Gateway federates them)
-- Service discovery via **Eureka**; distributed tracing in **Zipkin** + W3C Trace Context (**catalog-service**: OTLP → **OpenTelemetry Collector** → Zipkin; **other subgraphs**: Brave/Micrometer → Zipkin HTTP API)
+- Service discovery via **Eureka**; distributed tracing + logs via W3C Trace Context (all Java services: OTLP → **OpenTelemetry Collector** → **Grafana Tempo** for traces, **Grafana Loki** for logs; Grafana provides trace↔log correlation)
 - Database per service: MongoDB (catalog), PostgreSQL (user, rating, playback), Redis (analytics state **and** catalog **Spring Cache** for the `movies` query, cache name `moviesCatalog`)
 - Kafka for event-driven communication (rating → analytics via outbox pattern)
 - Apollo Federation `@key` / `@extends` directives for cross-service entity resolution
@@ -194,9 +194,10 @@ Group imports in this order (separated by blank lines):
 | Analytics | 8084 | http://localhost:8084 |
 | Gateway | 4000 | http://localhost:4000 |
 | UI | 5173 | http://localhost:5173 |
-| Zipkin | 9411 | http://localhost:9411 |
 | OpenTelemetry Collector (OTLP gRPC) | 4317 | `localhost:4317` (from host when Compose maps ports) |
-| OpenTelemetry Collector (OTLP HTTP) | 4318 | `http://localhost:4318` (traces: `/v1/traces`) |
+| OpenTelemetry Collector (OTLP HTTP) | 4318 | `http://localhost:4318` (traces: `/v1/traces`, logs: `/v1/logs`) |
+| Grafana Tempo | 3200 | http://localhost:3200 |
+| Grafana Loki | 3100 | http://localhost:3100 |
 | cAdvisor | 8099 | http://localhost:8099 |
 | Prometheus | 9090 | http://localhost:9090 |
 | Grafana | 3005 | http://localhost:3005 |

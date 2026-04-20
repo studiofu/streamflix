@@ -62,6 +62,7 @@ services:
       - MONGO_URI=mongodb://mongodb:27017/streamflix_db
       - EUREKA_URL=http://eureka-server:8761/eureka/
       - OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
+      - OTLP_LOGS_ENDPOINT=http://otel-collector:4318/v1/logs
     depends_on:
       - mongodb
       - eureka-server
@@ -75,10 +76,12 @@ services:
     environment:
       - POSTGRES_URL=jdbc:postgresql://postgres:5432/streamflix_db
       - EUREKA_URL=http://eureka-server:8761/eureka/
-      - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
+      - OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
+      - OTLP_LOGS_ENDPOINT=http://otel-collector:4318/v1/logs
     depends_on:
       - postgres
       - eureka-server
+      - otel-collector
 
   rating-service:
     build: ./rating-service
@@ -89,11 +92,13 @@ services:
       - POSTGRES_URL=jdbc:postgresql://postgres:5432/streamflix_db
       - EUREKA_URL=http://eureka-server:8761/eureka/
       - KAFKA_URL=kafka:9092
-      - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
+      - OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
+      - OTLP_LOGS_ENDPOINT=http://otel-collector:4318/v1/logs
     depends_on:
       - postgres
       - kafka
       - eureka-server
+      - otel-collector
 
   playback-service:
     build: ./playback-service
@@ -103,10 +108,12 @@ services:
     environment:
       - POSTGRES_URL=jdbc:postgresql://postgres:5432/streamflix_db
       - EUREKA_URL=http://eureka-server:8761/eureka/
-      - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
+      - OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
+      - OTLP_LOGS_ENDPOINT=http://otel-collector:4318/v1/logs
     depends_on:
       - postgres
       - eureka-server
+      - otel-collector
 
   analytics-service:
     build: ./analytics-service
@@ -116,10 +123,12 @@ services:
     environment:
       - EUREKA_URL=http://eureka-server:8761/eureka/
       - KAFKA_URL=kafka:9092
-      - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
+      - OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
+      - OTLP_LOGS_ENDPOINT=http://otel-collector:4318/v1/logs
     depends_on:
       - kafka
       - eureka-server
+      - otel-collector
 
   # ==========================================
   # 4. APOLLO FEDERATION GATEWAY
@@ -155,11 +164,23 @@ services:
       - federation-gateway      
 
 
-  zipkin:
-    image: openzipkin/zipkin:latest
-    container_name: streamflix-zipkin
+  tempo:
+    image: grafana/tempo:2.6.1
+    container_name: streamflix-tempo
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
     ports:
-      - "9411:9411"
+      - "3200:3200"
+
+  loki:
+    image: grafana/loki:3.2.1
+    container_name: streamflix-loki
+    command: ["-config.file=/etc/loki/loki-config.yaml"]
+    volumes:
+      - ./loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+    ports:
+      - "3100:3100"
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.143.1
@@ -171,4 +192,5 @@ services:
       - "4317:4317"
       - "4318:4318"
     depends_on:
-      - zipkin
+      - tempo
+      - loki

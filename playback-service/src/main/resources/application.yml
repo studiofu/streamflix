@@ -31,9 +31,23 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+  otlp:
+    metrics:
+      export:
+        enabled: false   # Prometheus scrapes /actuator/prometheus; don't push metrics via OTLP
   tracing:
     sampling:
       probability: 1.0
-    export:
-      zipkin:
-        endpoint: ${ZIPKIN_URL:http://localhost:9411/api/v2/spans}
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
+    logging:
+      export:
+        otlp:
+          endpoint: ${OTLP_LOGS_ENDPOINT:http://localhost:4318/v1/logs}
+
+logging:
+  pattern:
+    correlation: "[${spring.application.name},%X{trace_id:-},%X{span_id:-}] "
