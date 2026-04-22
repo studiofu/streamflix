@@ -1,0 +1,20 @@
+# For docker-compose-full.yml: scrape targets on the compose network.
+# (prometheus.yml uses host.docker.internal for apps running on the host.)
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: "streamflix-backend"
+    metrics_path: "/actuator/prometheus"
+    static_configs:
+      - targets:
+          - "catalog-service:8081"
+          - "user-service:8082"
+          - "rating-service:8083"
+          - "analytics-service:8084"
+          - "admin-service:8085"
+          - "playback-service:8086"
+
+  - job_name: "cadvisor"
+    static_configs:
+      - targets: ["cadvisor:8080"]

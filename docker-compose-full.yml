@@ -1,10 +1,7 @@
 # docker-compose-full.yml
 # docker compose -f docker-compose-full.yml up --build
 services:
-
-  # ==========================================
-  # 1. INFRASTRUCTURE & DATABASES
-  # ==========================================
+  # 1. PostgreSQL (For User & Rating Services)
   postgres:
     image: postgres:16-alpine
     container_name: streamflix-postgres
@@ -14,164 +11,107 @@ services:
       POSTGRES_DB: streamflix_db
     ports:
       - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U streamflix_user -d streamflix_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
+  # 2. MongoDB (For Catalog Service)
   mongodb:
     image: mongo:7.0
     container_name: streamflix-mongo
     ports:
       - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
+  # 3. Redis (For caching and fast watch-state retrieval)
+  redis:
+    image: redis:7-alpine
+    container_name: streamflix-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  # REDIS UI (RedisInsight)
+  redisinsight:
+    image: redis/redisinsight:latest
+    container_name: streamflix-redisinsight
+    ports:
+      - "8001:5540" # Maps port 8001 on your browser to the internal UI port
+    depends_on:
+      - redis
+
+  # 4. Apache Kafka (Official Image, KRaft Mode)
   kafka:
     image: apache/kafka:3.7.0
     container_name: streamflix-kafka
+    ports:
+      - "9094:9094" # Port for your local IDE to connect
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: 'broker,controller'
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT'
       KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:9093'
-      # Notice we expose internal port 9092 for other containers to connect to
       KAFKA_LISTENERS: 'PLAINTEXT://kafka:9092,CONTROLLER://kafka:9093,EXTERNAL://0.0.0.0:9094'
       KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094'
       KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
       KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
       CLUSTER_ID: 'StreamFlixCluster12345'
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka:9092 >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
+
+  # 5. Kafka UI
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: streamflix-kafka-ui
+    ports:
+      - "8090:8080" # Available at localhost:8090
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=StreamFlix-Cluster
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
 
   # ==========================================
-  # 2. NETFLIX DISCOVERY (EUREKA)
+  # TRACES (Tempo) + LOGS (Loki)
   # ==========================================
-  eureka-server:
-    build: ./eureka-server
-    container_name: eureka-server
-    ports:
-      - "8761:8761"
-    environment:
-      - EUREKA_HOSTNAME=eureka-server
-
-  # ==========================================
-  # 3. MICROSERVICES (DGS SUBGRAPHS)
-  # ==========================================
-  catalog-service:
-    build: ./catalog-service
-    container_name: catalog-service
-    ports:
-      - "8081:8081"
-    environment:
-      - MONGO_URI=mongodb://mongodb:27017/streamflix_db
-      - EUREKA_URL=http://eureka-server:8761/eureka/
-      - OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
-      - OTLP_LOGS_ENDPOINT=http://otel-collector:4318/v1/logs
-    depends_on:
-      - mongodb
-      - eureka-server
-      - otel-collector
-
-  user-service:
-    build: ./user-service
-    container_name: user-service
-    ports:
-      - "8082:8082"
-    environment:
-      - POSTGRES_URL=jdbc:postgresql://postgres:5432/streamflix_db
-      - EUREKA_URL=http://eureka-server:8761/eureka/
-      - OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
-      - OTLP_LOGS_ENDPOINT=http://otel-collector:4318/v1/logs
-    depends_on:
-      - postgres
-      - eureka-server
-      - otel-collector
-
-  rating-service:
-    build: ./rating-service
-    container_name: rating-service
-    ports:
-      - "8083:8083"
-    environment:
-      - POSTGRES_URL=jdbc:postgresql://postgres:5432/streamflix_db
-      - EUREKA_URL=http://eureka-server:8761/eureka/
-      - KAFKA_URL=kafka:9092
-      - OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
-      - OTLP_LOGS_ENDPOINT=http://otel-collector:4318/v1/logs
-    depends_on:
-      - postgres
-      - kafka
-      - eureka-server
-      - otel-collector
-
-  playback-service:
-    build: ./playback-service
-    container_name: playback-service
-    ports:
-      - "8086:8086"
-    environment:
-      - POSTGRES_URL=jdbc:postgresql://postgres:5432/streamflix_db
-      - EUREKA_URL=http://eureka-server:8761/eureka/
-      - OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
-      - OTLP_LOGS_ENDPOINT=http://otel-collector:4318/v1/logs
-    depends_on:
-      - postgres
-      - eureka-server
-      - otel-collector
-
-  analytics-service:
-    build: ./analytics-service
-    container_name: analytics-service
-    ports:
-      - "8084:8084"
-    environment:
-      - EUREKA_URL=http://eureka-server:8761/eureka/
-      - KAFKA_URL=kafka:9092
-      - OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
-      - OTLP_LOGS_ENDPOINT=http://otel-collector:4318/v1/logs
-    depends_on:
-      - kafka
-      - eureka-server
-      - otel-collector
-
-  # ==========================================
-  # 4. APOLLO FEDERATION GATEWAY
-  # ==========================================
-  federation-gateway:
-    build: ./federation-gateway
-    container_name: federation-gateway
-    ports:
-      - "4000:4000"
-    environment:
-      - CATALOG_URL=http://catalog-service:8081/graphql
-      - USER_URL=http://user-service:8082/graphql
-      - RATING_URL=http://rating-service:8083/graphql
-      - PLAYBACK_URL=http://playback-service:8086/graphql
-    restart: on-failure   
-    depends_on:
-      - catalog-service
-      - user-service
-      - rating-service
-      - playback-service
-
-
-# ==========================================
-# 5. FRONTEND UI (REACT + NGINX)
-# ==========================================
-  streamflix-ui:
-    build: ./streamflix-ui
-    container_name: streamflix-ui
-    # We map port 3000 on your machine to Nginx's internal port 80
-    ports:
-      - "3000:80"
-    depends_on:
-      - federation-gateway      
-
-
   tempo:
     image: grafana/tempo:2.6.1
     container_name: streamflix-tempo
     command: ["-config.file=/etc/tempo/tempo.yaml"]
     volumes:
       - ./tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo_data:/var/tempo
     ports:
-      - "3200:3200"
+      - "3200:3200" # Tempo HTTP query API
 
   loki:
     image: grafana/loki:3.2.1
@@ -179,6 +119,7 @@ services:
     command: ["-config.file=/etc/loki/loki-config.yaml"]
     volumes:
       - ./loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - loki_data:/loki
     ports:
       - "3100:3100"
 
@@ -194,3 +135,206 @@ services:
     depends_on:
       - tempo
       - loki
+
+  # ==========================================
+  # METRICS & DASHBOARDS
+  # ==========================================
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: streamflix-cadvisor
+    ports:
+      - "8099:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+    privileged: true
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: streamflix-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus-docker.yml:/etc/prometheus/prometheus.yml
+    depends_on:
+      - cadvisor
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: streamflix-grafana
+    ports:
+      - "3005:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+      - tempo
+      - loki
+
+  # ==========================================
+  # NETFLIX DISCOVERY (EUREKA)
+  # ==========================================
+  eureka-server:
+    build: ./eureka-server
+    container_name: eureka-server
+    ports:
+      - "8761:8761"
+    environment:
+      - EUREKA_HOSTNAME=eureka-server
+
+  # ==========================================
+  # MICROSERVICES (DGS SUBGRAPHS)
+  # ==========================================
+  catalog-service:
+    build: ./catalog-service
+    container_name: catalog-service
+    ports:
+      - "8081:8081"
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/streamflix_db
+      - REDIS_HOST=redis
+      - EUREKA_URL=http://eureka-server:8761/eureka/
+      - OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
+      - OTLP_LOGS_ENDPOINT=http://otel-collector:4318/v1/logs
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+
+  user-service:
+    build: ./user-service
+    container_name: user-service
+    ports:
+      - "8082:8082"
+    environment:
+      - POSTGRES_URL=jdbc:postgresql://postgres:5432/streamflix_db
+      - EUREKA_URL=http://eureka-server:8761/eureka/
+      - JWT_SECRET=super-secret-streamflix-key
+      - OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
+      - OTLP_LOGS_ENDPOINT=http://otel-collector:4318/v1/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+
+  rating-service:
+    build: ./rating-service
+    container_name: rating-service
+    ports:
+      - "8083:8083"
+    environment:
+      - POSTGRES_URL=jdbc:postgresql://postgres:5432/streamflix_db
+      - EUREKA_URL=http://eureka-server:8761/eureka/
+      - KAFKA_URL=kafka:9092
+      - OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
+      - OTLP_LOGS_ENDPOINT=http://otel-collector:4318/v1/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+
+  analytics-service:
+    build: ./analytics-service
+    container_name: analytics-service
+    ports:
+      - "8084:8084"
+    environment:
+      - EUREKA_URL=http://eureka-server:8761/eureka/
+      - KAFKA_URL=kafka:9092
+      - REDIS_HOST=redis
+      - OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
+      - OTLP_LOGS_ENDPOINT=http://otel-collector:4318/v1/logs
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+
+  admin-service:
+    build: ./admin-service
+    container_name: admin-service
+    ports:
+      - "8085:8085"
+    environment:
+      - EUREKA_URL=http://eureka-server:8761/eureka/
+    depends_on:
+      eureka-server:
+        condition: service_started
+
+  playback-service:
+    build: ./playback-service
+    container_name: playback-service
+    ports:
+      - "8086:8086"
+    environment:
+      - POSTGRES_URL=jdbc:postgresql://postgres:5432/streamflix_db
+      - EUREKA_URL=http://eureka-server:8761/eureka/
+      - OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
+      - OTLP_LOGS_ENDPOINT=http://otel-collector:4318/v1/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+
+  # ==========================================
+  # APOLLO FEDERATION GATEWAY
+  # ==========================================
+  federation-gateway:
+    build: ./federation-gateway
+    container_name: federation-gateway
+    ports:
+      - "4000:4000"
+    environment:
+      - JWT_SECRET=super-secret-streamflix-key
+      - CATALOG_URL=http://catalog-service:8081/graphql
+      - USER_URL=http://user-service:8082/graphql
+      - RATING_URL=http://rating-service:8083/graphql
+      - PLAYBACK_URL=http://playback-service:8086/graphql
+    restart: on-failure
+    depends_on:
+      - catalog-service
+      - user-service
+      - rating-service
+      - playback-service
+
+  # ==========================================
+  # FRONTEND UI (REACT + NGINX)
+  # ==========================================
+  streamflix-ui:
+    build: ./streamflix-ui
+    container_name: streamflix-ui
+    ports:
+      - "3000:80"
+    depends_on:
+      - federation-gateway
+
+volumes:
+  postgres_data:
+  mongo_data:
+  kafka_data:
+  grafana_data:
+  tempo_data:
+  loki_data:
