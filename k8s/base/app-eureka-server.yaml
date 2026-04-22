@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eureka-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: eureka-server }
+  template:
+    metadata:
+      labels: { app: eureka-server }
+    spec:
+      containers:
+        - name: eureka
+          image: streamflix/eureka-server
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 8761, name: http }]
+          env:
+            - { name: EUREKA_HOSTNAME, value: eureka-server }
+          readinessProbe:
+            tcpSocket: { port: 8761 }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: 8761 }
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests: { memory: 384Mi, cpu: 200m }
+            limits: { memory: 768Mi, cpu: 1000m }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: eureka-server
+spec:
+  selector: { app: eureka-server }
+  ports:
+    - { port: 8761, targetPort: 8761, name: http }

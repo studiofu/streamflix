@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: playback-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: playback-service }
+  template:
+    metadata:
+      labels: { app: playback-service }
+    spec:
+      containers:
+        - name: playback
+          image: streamflix/playback-service
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 8086, name: http }]
+          env:
+            - { name: POSTGRES_URL, value: "jdbc:postgresql://postgres:5432/streamflix_db" }
+            - { name: EUREKA_URL, value: "http://eureka-server:8761/eureka/" }
+            - { name: OTLP_TRACES_ENDPOINT, value: "http://otel-collector:4318/v1/traces" }
+            - { name: OTLP_LOGS_ENDPOINT, value: "http://otel-collector:4318/v1/logs" }
+          readinessProbe:
+            httpGet: { path: /actuator/health, port: 8086 }
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /actuator/health, port: 8086 }
+            initialDelaySeconds: 60
+            periodSeconds: 15
+          resources:
+            requests: { memory: 512Mi, cpu: 200m }
+            limits: { memory: 1Gi, cpu: 1000m }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: playback-service
+spec:
+  selector: { app: playback-service }
+  ports:
+    - { port: 8086, targetPort: 8086, name: http }

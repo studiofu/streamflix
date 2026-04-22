@@ -4,6 +4,9 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
+# Vite: set at build (empty = use Vite default / authRefresh.js fallbacks, often localhost:4000)
+ARG VITE_GRAPHQL_URI
+ENV VITE_GRAPHQL_URI=${VITE_GRAPHQL_URI}
 # Vite builds the static files into the /dist folder
 RUN npm run build
 

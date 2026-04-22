@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: admin-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: admin-service }
+  template:
+    metadata:
+      labels: { app: admin-service }
+    spec:
+      containers:
+        - name: admin
+          image: streamflix/admin-service
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 8085, name: http }]
+          env:
+            - { name: EUREKA_URL, value: "http://eureka-server:8761/eureka/" }
+          readinessProbe:
+            tcpSocket: { port: 8085 }
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: 8085 }
+            initialDelaySeconds: 50
+            periodSeconds: 20
+          resources:
+            requests: { memory: 384Mi, cpu: 200m }
+            limits: { memory: 768Mi, cpu: 1000m }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: admin-service
+spec:
+  selector: { app: admin-service }
+  ports:
+    - { port: 8085, targetPort: 8085, name: http }

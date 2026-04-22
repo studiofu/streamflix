@@ -1,0 +1,26 @@
+# Requires an Ingress controller. Set spec.ingressClassName to your cluster's class (e.g. nginx, traefik).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: streamflix-ingress
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: app.streamflix.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: streamflix-ui
+                port: { name: http }
+    - host: api.streamflix.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: federation-gateway
+                port: { name: http }

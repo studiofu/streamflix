@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prometheus-pvc
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: prometheus }
+  template:
+    metadata:
+      labels: { app: prometheus }
+    spec:
+      containers:
+        - name: prometheus
+          image: prom/prometheus:latest
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --web.enable-lifecycle
+            - --storage.tsdb.path=/prometheus
+          ports: [{ containerPort: 9090, name: http }]
+          volumeMounts:
+            - { name: config, mountPath: /etc/prometheus, readOnly: true }
+            - { name: data, mountPath: /prometheus }
+          readinessProbe:
+            httpGet: { path: /-/ready, port: 9090 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests: { memory: 256Mi, cpu: 100m }
+            limits: { memory: 1Gi, cpu: 1000m }
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-file
+            items:
+              - { key: prometheus.yml, path: prometheus.yml }
+        - name: data
+          persistentVolumeClaim: { claimName: prometheus-pvc }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+spec:
+  selector: { app: prometheus }
+  ports:
+    - { port: 9090, targetPort: 9090, name: http }
+---
+# cAdvisor: omitted by default; many clusters use kubelet/node metrics. Add manually if you need the same cAdvisor + Prometheus target as in Docker.

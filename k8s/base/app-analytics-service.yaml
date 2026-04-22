@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analytics-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: analytics-service }
+  template:
+    metadata:
+      labels: { app: analytics-service }
+    spec:
+      containers:
+        - name: analytics
+          image: streamflix/analytics-service
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 8084, name: http }]
+          env:
+            - { name: EUREKA_URL, value: "http://eureka-server:8761/eureka/" }
+            - { name: KAFKA_URL, value: "kafka:9092" }
+            - { name: REDIS_HOST, value: "redis" }
+            - { name: OTLP_TRACES_ENDPOINT, value: "http://otel-collector:4318/v1/traces" }
+            - { name: OTLP_LOGS_ENDPOINT, value: "http://otel-collector:4318/v1/logs" }
+          readinessProbe:
+            httpGet: { path: /actuator/health, port: 8084 }
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /actuator/health, port: 8084 }
+            initialDelaySeconds: 60
+            periodSeconds: 15
+          resources:
+            requests: { memory: 512Mi, cpu: 200m }
+            limits: { memory: 1Gi, cpu: 1000m }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: analytics-service
+spec:
+  selector: { app: analytics-service }
+  ports:
+    - { port: 8084, targetPort: 8084, name: http }

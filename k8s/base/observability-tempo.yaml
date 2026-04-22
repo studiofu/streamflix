@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tempo-pvc
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tempo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: tempo }
+  template:
+    metadata:
+      labels: { app: tempo }
+    spec:
+      containers:
+        - name: tempo
+          image: grafana/tempo:2.6.1
+          args: ["-config.file=/etc/tempo/tempo.yaml"]
+          ports:
+            - { containerPort: 3200, name: http }
+            - { containerPort: 4317, name: otlp-grpc }
+            - { containerPort: 4318, name: otlp-http }
+          volumeMounts:
+            - { name: config, mountPath: /etc/tempo, readOnly: true }
+            - { name: data, mountPath: /var/tempo }
+          readinessProbe:
+            tcpSocket: { port: 3200 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests: { memory: 128Mi, cpu: 100m }
+            limits: { memory: 512Mi, cpu: 500m }
+      volumes:
+        - name: config
+          configMap:
+            name: tempo-file
+            items:
+              - { key: tempo.yaml, path: tempo.yaml }
+        - name: data
+          persistentVolumeClaim: { claimName: tempo-pvc }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tempo
+spec:
+  selector: { app: tempo }
+  ports:
+    - { port: 3200, targetPort: 3200, name: http }
+    - { port: 4317, targetPort: 4317, name: otlp-grpc }
+    - { port: 4318, targetPort: 4318, name: otlp-http }

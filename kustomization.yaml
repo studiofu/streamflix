@@ -1,0 +1,95 @@
+# Build / apply from repository root: kubectl apply -k .
+# (Kustomize requires config file paths to live under this same directory, so the root is used.)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: streamflix
+
+configMapGenerator:
+  - name: tempo-file
+    options:
+      disableNameSuffixHash: true
+    files:
+      - tempo.yaml=tempo/tempo.yaml
+  - name: loki-file
+    options:
+      disableNameSuffixHash: true
+    files:
+      - loki-config.yaml=loki/loki-config.yaml
+  - name: otel-collector-file
+    options:
+      disableNameSuffixHash: true
+    files:
+      - config.yaml=otel-collector/config.yaml
+  - name: prometheus-file
+    options:
+      disableNameSuffixHash: true
+    files:
+      - prometheus.yml=prometheus-docker.yml
+  - name: grafana-datasources
+    options:
+      disableNameSuffixHash: true
+    files:
+      - datasources.yaml=grafana/provisioning/datasources/datasources.yaml
+  - name: postgres-init
+    options:
+      disableNameSuffixHash: true
+    files:
+      - 01-streamflix-test-schema.sql=scripts/postgres/init/01-streamflix-test-schema.sql
+
+resources:
+  - k8s/base/namespace.yaml
+  - k8s/base/secret.yaml
+  - k8s/base/infrastructure-postgres.yaml
+  - k8s/base/infrastructure-mongodb.yaml
+  - k8s/base/infrastructure-redis.yaml
+  - k8s/base/infrastructure-kafka.yaml
+  - k8s/base/observability-tempo.yaml
+  - k8s/base/observability-loki.yaml
+  - k8s/base/observability-otel.yaml
+  - k8s/base/observability-prometheus.yaml
+  - k8s/base/observability-grafana.yaml
+  - k8s/base/app-eureka-server.yaml
+  - k8s/base/app-catalog-service.yaml
+  - k8s/base/app-user-service.yaml
+  - k8s/base/app-rating-service.yaml
+  - k8s/base/app-analytics-service.yaml
+  - k8s/base/app-admin-service.yaml
+  - k8s/base/app-playback-service.yaml
+  - k8s/base/app-federation-gateway.yaml
+  - k8s/base/app-streamflix-ui.yaml
+  - k8s/base/ingress.yaml
+
+images:
+  - name: streamflix/eureka-server
+    newName: streamflix/eureka-server
+    newTag: latest
+  - name: streamflix/catalog-service
+    newName: streamflix/catalog-service
+    newTag: latest
+  - name: streamflix/user-service
+    newName: streamflix/user-service
+    newTag: latest
+  - name: streamflix/rating-service
+    newName: streamflix/rating-service
+    newTag: latest
+  - name: streamflix/playback-service
+    newName: streamflix/playback-service
+    newTag: latest
+  - name: streamflix/analytics-service
+    newName: streamflix/analytics-service
+    newTag: latest
+  - name: streamflix/admin-service
+    newName: streamflix/admin-service
+    newTag: latest
+  - name: streamflix/federation-gateway
+    newName: streamflix/federation-gateway
+    newTag: latest
+  - name: streamflix/streamflix-ui
+    newName: streamflix/streamflix-ui
+    newTag: latest
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: streamflix
+    includeSelectors: false

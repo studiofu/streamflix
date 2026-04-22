@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: federation-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: federation-gateway }
+  template:
+    metadata:
+      labels: { app: federation-gateway }
+    spec:
+      containers:
+        - name: gateway
+          image: streamflix/federation-gateway
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 4000, name: http }]
+          env:
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef: { name: streamflix-secrets, key: JWT_SECRET }
+            - { name: CATALOG_URL, value: "http://catalog-service:8081/graphql" }
+            - { name: USER_URL, value: "http://user-service:8082/graphql" }
+            - { name: RATING_URL, value: "http://rating-service:8083/graphql" }
+            - { name: PLAYBACK_URL, value: "http://playback-service:8086/graphql" }
+          readinessProbe:
+            tcpSocket: { port: 4000 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket: { port: 4000 }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests: { memory: 128Mi, cpu: 100m }
+            limits: { memory: 512Mi, cpu: 500m }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: federation-gateway
+spec:
+  selector: { app: federation-gateway }
+  ports:
+    - { port: 4000, targetPort: 4000, name: http }
