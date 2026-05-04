@@ -1,6 +1,6 @@
 
 
-LGTM Stack
+## LGTM Stack
 - Grafana Tempo
 - Grafana Loki
 - Grafana Prometheus
@@ -8,14 +8,33 @@ LGTM Stack
 
 Mimir is a time series database that is part of the LGTM Stack.
 
-ELK Stack
+## ELK Stack
 - Elasticsearch
 - Logstash
 - Kibana
 
+## Apollo Rover
+
+Here is the text-only to-do list for the Apollo Rover setup:
+
+Install the Apollo Rover CLI locally or in your deployment environment.
+
+Create a supergraph.yaml file in your project root to map out all subgraph routing URLs and schema locations.
+
+Run the command "rover supergraph compose --config ./supergraph.yaml > supergraph.graphql" to generate the static schema file.
+
+Update gateway.js to import "readFileSync" from the "fs" module.
+
+Replace IntrospectAndCompose in your gateway code with the statically loaded supergraphSdl string.
+
+Delete the pollIntervalInMs configuration from the gateway.
+
+Add the Rover compose command to your CI/CD pipeline so it automatically builds a new supergraph.graphql file during future deployments.
+
 
 
 ## Big Picture
+
 一個完整的測試環境大約會包含以下容器：
 Your-Java-App: 你的 Spring Boot 4 應用。
 Grafana Alloy: 負責收集日誌和 Traces 並分發。
@@ -25,7 +44,9 @@ Prometheus: 接收 Metrics（你現有的）。
 Grafana: 展示介面（你現有的）。
 
 
-Saga Pattern (Saga 模式)： 如果一個業務流程涉及跨服務的數據修改（如：訂單 -> 庫存 -> 支付），2026 年推薦使用 Saga Choreography (編排式)
+## Saga Pattern (Saga 模式)
+
+如果一個業務流程涉及跨服務的數據修改（如：訂單 -> 庫存 -> 支付），2026 年推薦使用 Saga Choreography (編排式)
 - Choreography (舞蹈式) 的核心概念： 沒有一個中央指揮官去命令大家做事。每個微服務就像舞池裡的舞者，聽到某種特定的音樂（事件/Event），就會做出對應的動作，做完後再放出下一段音樂給別人聽。
 
 React + Next.js + GraphQL Code Generator： 既然用了 GraphQL，你的前端應該是「自動生成 Type」的。
