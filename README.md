@@ -1,6 +1,14 @@
-# Streamflix Workspace
+# Streamflix Fantasy Project
 
-A **microservices** demo inspired by streaming platforms: **GraphQL subgraphs** (Netflix DGS) register with **Eureka**, a **Node.js Apollo Federation gateway** composes a single supergraph for the **React** UI, with **Kafka**-driven analytics, **PostgreSQL** / **MongoDB** persistence, **Redis** for analytics and for **catalog** Spring Cache (`moviesCatalog`), and **OpenTelemetry**-based observability: every Java service exports **traces** and **logs** via OTLP to the **OpenTelemetry Collector**, which fans out to **Grafana Tempo** (traces) and **Grafana Loki** (logs). **Prometheus** scrapes JVM and **cAdvisor** container metrics; **Grafana** is the single pane for metrics, traces, and logs (with trace↔log correlation).
+- **Microservices** demo inspired by streaming platforms.
+- **GraphQL subgraphs** (Netflix DGS) register with **Eureka**.
+- **Node.js Apollo Federation gateway** composes a single supergraph for the **React** UI.
+- **Kafka**-driven analytics.
+- **PostgreSQL** / **MongoDB** persistence.
+- **Redis** for analytics and for **catalog** Spring Cache (`moviesCatalog`).
+- **OpenTelemetry** observability: every Java service exports **traces** and **logs** via OTLP to the **OpenTelemetry Collector**, which fans out to **Grafana Tempo** (traces) and **Grafana Loki** (logs).
+- **Prometheus** scrapes JVM and **cAdvisor** container metrics.
+- **Grafana** is the single pane for metrics, traces, and logs (with trace↔log correlation).
 
 ---
 
@@ -72,7 +80,21 @@ _Spring Boot Admin is optional; it only monitors registered apps via Eureka._
 | **federation-gateway** | 4000 | **Apollo Federation** supergraph. Subgraph URLs via `CATALOG_URL`, `USER_URL`, `RATING_URL` (defaults: `localhost` subgraph ports). |
 | **streamflix-ui** | 5173 (dev) | **Vite** dev server; GraphQL target from `VITE_GRAPHQL_URI` (default `http://localhost:4000/`). **Apollo Client** sends `Authorization` and **proactive token refresh** (`Refresh` mutation in `src/lib/authRefresh.js`). Single-page catalog: list movies (title, description, release year, federated ratings), **login**, **add movie** when logged in (`addMovie`; catalog does not enforce `x-user-id`), **rate** when logged in (`addRating`; requires gateway JWT so rating-service receives `x-user-id`). |
 
-**Infrastructure-only containers** (`docker-compose.yml`): PostgreSQL, MongoDB, Redis, RedisInsight (`8001`), Kafka, Kafka UI (`8090`), **OpenTelemetry Collector** (OTLP **4317** gRPC, **4318** HTTP), **Grafana Tempo** (`3200`), **Grafana Loki** (`3100`), **cAdvisor** (`8099`), **Prometheus** (`9090`), **Grafana** (`3005`). Collector config: [`otel-collector/config.yaml`](otel-collector/config.yaml) (forwards traces to Tempo, logs to Loki). Tempo config: [`tempo/tempo.yaml`](tempo/tempo.yaml). Loki config: [`loki/loki-config.yaml`](loki/loki-config.yaml). Grafana datasource provisioning: [`grafana/provisioning/datasources/datasources.yaml`](grafana/provisioning/datasources/datasources.yaml).
+**Infrastructure-only containers** (`docker-compose.yml`)
+
+- PostgreSQL, MongoDB, Redis
+- RedisInsight (`8001`)
+- Kafka, Kafka UI (`8090`)
+- **OpenTelemetry Collector** — OTLP **4317** (gRPC), **4318** (HTTP)
+- **Grafana Tempo** (`3200`)
+- **Grafana Loki** (`3100`)
+- **cAdvisor** (`8099`)
+- **Prometheus** (`9090`)
+- **Grafana** (`3005`)
+- Collector config: [`otel-collector/config.yaml`](otel-collector/config.yaml) — forwards traces to Tempo, logs to Loki
+- Tempo config: [`tempo/tempo.yaml`](tempo/tempo.yaml)
+- Loki config: [`loki/loki-config.yaml`](loki/loki-config.yaml)
+- Grafana datasource provisioning: [`grafana/provisioning/datasources/datasources.yaml`](grafana/provisioning/datasources/datasources.yaml)
 
 ---
 
