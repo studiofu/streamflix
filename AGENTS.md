@@ -1,6 +1,6 @@
 # AGENTS.md — StreamFlix Workspace
 
-This is a microservices streaming platform built with Spring Boot (Java 25), Apollo GraphQL Federation, and React.
+Microservices streaming platform: Spring Boot 4.0 (Java 25), Apollo GraphQL Federation, React 19.
 
 ## Repository Layout
 
@@ -10,69 +10,80 @@ analytics-service/   Kafka consumer, Redis store       (port 8084)
 catalog-service/     Movie catalog, MongoDB, Redis cache, Resilience4j CB (port 8081)
 eureka-server/       Service discovery registry         (port 8761)
 federation-gateway/  Apollo Federation Gateway (Node)   (port 4000)
-otel-collector/      OpenTelemetry Collector config (OTLP → Zipkin)
+k8s/                 Kustomize manifests (deploy from repo root)
+otel-collector/      OpenTelemetry Collector config (OTLP → Tempo + Loki)
+playback-service/    Watch progress, PostgreSQL         (port 8086)
 rating-service/      Ratings, PostgreSQL + Kafka outbox  (port 8083)
-playback-service/    Simulated watch progress, PostgreSQL   (port 8086)
-scripts/             dev-up.ps1, dev-down.ps1
+scripts/             dev-up.ps1, dev-down.ps1, postgres/init/
 streamflix-ui/       React 19 + Vite 8 SPA             (port 5173)
 user-service/        Users + JWT auth, PostgreSQL       (port 8082)
-prometheus.yml       Prometheus scrape targets (JVM + cAdvisor)
 ```
+
+No root `pom.xml` — each Java service is an independent Maven project. Build/test from the service directory.
 
 ## Build & Run Commands
 
-### Infrastructure (Postgres, MongoDB, Redis, Kafka, OpenTelemetry Collector, Tempo, Loki, cAdvisor, Prometheus, Grafana)
+### Infrastructure (docker-compose.yml — Postgres, Mongo, Redis, Kafka, OTel Collector, Tempo, Loki, cAdvisor, Prometheus, Grafana)
 
 ```bash
 docker compose up -d --wait          # start infra; wait until healthy
 docker compose down                  # stop infra
 ```
 
-Compose also runs **OpenTelemetry Collector** ([`otel-collector/config.yaml`](otel-collector/config.yaml): OTLP in, Tempo + Loki exporters out), **Grafana Tempo** ([`tempo/tempo.yaml`](tempo/tempo.yaml)), **Grafana Loki** ([`loki/loki-config.yaml`](loki/loki-config.yaml)), **cAdvisor** (container metrics), **Prometheus** ([`prometheus.yml`](prometheus.yml): JVM targets + cAdvisor), and **Grafana** (datasources provisioned from [`grafana/provisioning/datasources/datasources.yaml`](grafana/provisioning/datasources/datasources.yaml)). On **Docker Desktop (macOS)**, cAdvisor metrics may be partial compared to Linux.
+### Full stack in Docker (all services containerized + Nginx UI)
 
-### Local development (all services)
+```bash
+docker compose -f docker-compose-full.yml up --build   # UI at http://localhost:3000
+```
+
+### Kubernetes (Kustomize, from repo root)
+
+```bash
+kubectl apply -k .                   # deploys all services + infra into `streamflix` namespace
+```
+
+Images must be pre-built and loaded. See `k8s/README.md` for build commands and prerequisites.
+
+### Local development (infra in Docker, apps on host)
 
 ```powershell
-.\scripts\dev-up.ps1                 # docker compose up + mprocs
-.\scripts\dev-down.ps1               # docker compose down
+.\scripts\dev-up.ps1                 # docker compose up + mprocs (PowerShell only)
 ```
+
+Or run manually — start Eureka first, then subgraphs, then gateway, then UI. `mprocs.yaml` defines all processes.
 
 ### Java / Spring Boot services (Maven)
 
 ```bash
-# Build a single service
-mvn compile                          # compile only
+mvn compile                          # compile only (from service directory)
 mvn package -DskipTests              # package without tests
-
-# Run a single service (from the service directory)
-mvn spring-boot:run
-
-# Tests
-mvn test                             # run all tests for a service
-mvn test -Dtest=CatalogServiceApplicationTests   # run a single test class
+mvn spring-boot:run                  # run (from service directory)
+mvn test                             # all tests for current service
+mvn test -Dtest=CatalogServiceApplicationTests           # single test class
 mvn test -Dtest=CatalogServiceApplicationTests#contextLoads  # single method
 ```
 
-No Checkstyle, Spotless, PMD, or Jacoco plugins are configured.
+No Checkstyle, Spotless, PMD, or Jacoco plugins.
 
 ### Federation Gateway (Node.js)
 
 ```bash
-node index.js                        # start gateway (from federation-gateway/)
+npm install                          # first time (from federation-gateway/)
+node index.js                        # start gateway
 ```
 
-No tests or linter configured for this project.
+No tests or linter.
 
 ### StreamFlix UI (React + Vite)
 
 ```bash
-npm run dev                          # dev server with HMR
+npm run dev                          # dev server with HMR (from streamflix-ui/)
 npm run build                        # production build
 npm run lint                         # ESLint check
 npm run preview                      # preview production build
 ```
 
-No test runner (Jest/Vitest) is configured. No `npm test` script exists.
+No test runner configured. `VITE_GRAPHQL_URI` controls the GraphQL endpoint (default `http://localhost:4000/`); baked in at build time.
 
 ## Code Style — Java / Spring Boot
 
@@ -107,90 +118,59 @@ com.streamflix.<domain>/
 
 ### Imports
 
-Group imports in this order (separated by blank lines):
-1. Third-party / framework (`org.springframework.*`, `com.netflix.*`, `jakarta.*`)
-2. Project-internal (`com.streamflix.*`)
-3. Java standard library (`java.util.*`)
+Group: (1) third-party/framework → (2) `com.streamflix.*` → (3) `java.*`, separated by blank lines.
 
-### Formatting
+### Formatting & conventions
 
-- K&R brace style (opening brace on same line)
-- 4-space indentation preferred for business code
-- Compact single-line getters/setters: `public String getId() { return id; }`
+- K&R braces, 4-space indent for business code
 - No Lombok — write getters/setters manually; use Java `record` for DTOs
-
-### Annotations & DI
-
+- Compact single-line getters/setters: `public String getId() { return id; }`
 - **Field injection** with `@Autowired` (no constructor injection in this codebase)
-- All API exposure via `@DgsComponent` / `@DgsQuery` / `@DgsMutation` / `@DgsEntityFetcher`
-- **No `@RestController`** — everything is GraphQL via Netflix DGS
-- Entities: `@Entity` + `@Table` for PostgreSQL, `@Document` for MongoDB
+- All API exposure via `@DgsComponent` / `@DgsQuery` / `@DgsMutation` / `@DgsEntityFetcher` — **no `@RestController`**
+- Entities: `@Entity` + `@Table` (PostgreSQL), `@Document` (MongoDB)
 - IDs: `@Id` + `@GeneratedValue(strategy = GenerationType.UUID)` for JPA
 
-### Error handling
+### Error handling & logging
 
-- Throw `RuntimeException` with descriptive messages for business errors
-- No custom exception classes or `@ControllerAdvice` in the current codebase
-- Logging is inconsistent across modules: e.g. **catalog** `MovieDataFetcher` uses **SLF4J**; some paths still use **`System.err.println`** (e.g. parts of rating/analytics). Prefer SLF4J for new Java code.
+- `RuntimeException` for business errors — no custom exception classes or `@ControllerAdvice`
+- Some modules still use `System.err.println`; prefer **SLF4J** for new code
 
 ### Configuration
 
-- Use `application.yml` (not `.properties`)
-- Externalize with `${ENV_VAR:default}` pattern
-- Every service includes Eureka client + Actuator + tracing export config
-- **All Java services** use **`spring-boot-starter-opentelemetry`** with both **`management.opentelemetry.tracing.export.otlp.endpoint`** (env **`OTLP_TRACES_ENDPOINT`**, default `http://localhost:4318/v1/traces`) and **`management.opentelemetry.logging.export.otlp.endpoint`** (env **`OTLP_LOGS_ENDPOINT`**, default `http://localhost:4318/v1/logs`). Traces and logs go to the **OTel Collector**, which fans out to **Grafana Tempo** (traces) and **Grafana Loki** (logs).
-- All `application.yml` files include a `logging.pattern.correlation` that injects `%X{trace_id}` / `%X{span_id}` from MDC so log messages are correlated with spans.
+- `application.yml` only (not `.properties`); externalize with `${ENV_VAR:default}`
 - GraphQL schemas in `src/main/resources/schema/schema.graphqls`
+- Every service: Eureka client + Actuator + `spring-boot-starter-opentelemetry` (OTLP traces + logs)
+- Key env vars: `OTLP_TRACES_ENDPOINT`, `OTLP_LOGS_ENDPOINT` (default `http://localhost:4318/v1/{traces,logs}`)
 
 ### Resilience / circuit breakers
 
-- Only **catalog-service** currently uses a circuit breaker. Dependency: `spring-cloud-starter-circuitbreaker-resilience4j` (version from `spring-cloud-dependencies` BOM).
-- Style: **programmatic**, not annotation-based. Inject `Resilience4JCircuitBreakerFactory` and call `circuitBreakerFactory.create("mongoCatalog").run(supplier, fallback)`. This avoids AOP ordering conflicts with `@Cacheable` on `MovieDataFetcher.movies()`.
-- Code lives in `com.streamflix.catalog.service.MovieCatalogService`; `MovieDataFetcher` delegates reads to it and keeps `@Cacheable("moviesCatalog")` on the fetcher.
-- Fallbacks (reads only): `findAllMovies()` → `List.of()`; `findMovieById(id)` → `Optional.empty()` (fetcher maps to `null`). Writes (`addMovie` → `saveMovie`) are **not** wrapped so failures surface to the client.
-- Config lives under `resilience4j.circuitbreaker.instances.mongoCatalog` in [`catalog-service/src/main/resources/application.yml`](catalog-service/src/main/resources/application.yml); health is enabled via `management.health.circuitbreakers.enabled: true`. Metrics exported as `resilience4j_circuitbreaker_*` on `/actuator/prometheus`.
-- When adding breakers to other services, prefer the same **programmatic** approach if the same method is also `@Cacheable` / `@Transactional`; otherwise `@CircuitBreaker(name=..., fallbackMethod=...)` on a dedicated service method is acceptable.
+- Only **catalog-service** uses a breaker (`mongoCatalog`). Dependency: `spring-cloud-starter-circuitbreaker-resilience4j`.
+- **Programmatic** style (inject `Resilience4JCircuitBreakerFactory`) — avoids AOP conflicts with `@Cacheable`. Reads fallback to empty list/`Optional.empty()`; writes (`addMovie`) are unwrapped.
+- For new breakers: use programmatic approach if the method is also `@Cacheable`/`@Transactional`; otherwise `@CircuitBreaker` annotation is acceptable.
 
 ## Code Style — StreamFlix UI (React)
 
-### Conventions
-
-- **ESM** (`import`/`export`, `"type": "module"` in package.json)
-- **Functional components only** with React hooks
-- **Single quotes**, **semicolons**, **2-space indentation**
+- **ESM**, functional components only, single quotes, semicolons, 2-space indent
 - Include `.jsx` extension in local imports: `import App from './App.jsx'`
-- GraphQL operations defined as `const` with `gql` tag at top of file
-- Styling via inline `style={{...}}` objects (no CSS framework)
-
-### Naming
-
-- Components: PascalCase (`App`)
-- Functions/variables: camelCase
-- GraphQL constants: UPPER_SNAKE_CASE (`GET_MOVIES`, `LOGIN_USER`, `ADD_RATING`, `ADD_MOVIE`)
-
-### ESLint (flat config, ESLint 9)
-
-- Extends: `js.configs.recommended`, `react-hooks`, `react-refresh`
-- `no-unused-vars`: error, ignoring names starting with uppercase or `_`
-- Run with `npm run lint` from `streamflix-ui/`
+- GraphQL operations as `const` with `gql` tag at top of file; `UPPER_SNAKE_CASE` naming
+- Inline `style={{...}}` objects (no CSS framework)
+- ESLint 9 flat config: `no-unused-vars` ignores names starting with uppercase or `_`
 
 ## Code Style — Federation Gateway (Node.js)
 
-- **CommonJS** (`require` / `module.exports`)
-- 2-space indentation, semicolons
-- `console.log` / `console.error` for logging
-- Environment variables with `process.env.VAR || 'default'` fallbacks
+- **CommonJS** (`require` / `module.exports`), 2-space indent, semicolons
+- `console.log` / `console.error` for logging; env vars via `process.env.VAR || 'default'`
 
 ## Architecture Notes
 
-- All services communicate via **GraphQL** (Netflix DGS on Java subgraphs, Apollo Gateway federates them)
-- Service discovery via **Eureka**; distributed tracing + logs via W3C Trace Context (all Java services: OTLP → **OpenTelemetry Collector** → **Grafana Tempo** for traces, **Grafana Loki** for logs; Grafana provides trace↔log correlation)
-- Database per service: MongoDB (catalog), PostgreSQL (user, rating, playback), Redis (analytics state **and** catalog **Spring Cache** for the `movies` query, cache name `moviesCatalog`)
-- Kafka for event-driven communication (rating → analytics via outbox pattern)
-- Apollo Federation `@key` / `@extends` directives for cross-service entity resolution
-- JWT auth: tokens verified at gateway, `x-user-id` header forwarded to subgraphs when `context.userId` is set (valid non-refresh JWT); UI uses **`authRefresh.js`** + Apollo links in **`main.jsx`** for proactive refresh and 401 retry
-- **Catalog vs rating mutations:** `addRating` in **rating-service** requires **`x-user-id`** (`@RequestHeader`, throws if missing). **`updatePlaybackProgress`** and **`recordPlay`** in **playback-service** use the same header pattern. **`User.playHistory`** on **playback-service** only returns entries when the requested user id matches **`x-user-id`** (otherwise an empty list), mirroring **`continueWatching`**. **`addMovie`** on **catalog-service** has no such check; **streamflix-ui** only renders the add-movie form when logged in. Gateway **supergraph** polling: `SUPERGRAPH_POLL_MS` (default 10000) in `federation-gateway/index.js`.
-- **Catalog resilience:** Mongo reads go through **Resilience4j** circuit breaker **`mongoCatalog`** in **`MovieCatalogService`** via Spring Cloud's `Resilience4JCircuitBreakerFactory`. Fallbacks keep the GraphQL shape stable (empty list / `null`) when Mongo is unavailable; `addMovie` stays outside the breaker.
+- All services communicate via **GraphQL** (Netflix DGS subgraphs federated by Apollo Gateway)
+- Service discovery via **Eureka**; tracing via W3C Trace Context (OTLP → OTel Collector → Tempo + Loki)
+- Database per service: MongoDB (catalog), PostgreSQL (user, rating, playback), Redis (analytics + catalog Spring Cache `moviesCatalog`)
+- Kafka for events (rating → analytics via outbox pattern)
+- JWT auth: gateway validates tokens, forwards `x-user-id` to subgraphs. Refresh tokens (`typ: refresh`) are rejected at gateway. UI uses proactive token refresh (`authRefresh.js`)
+- `addRating`, `updatePlaybackProgress`, `recordPlay` require `x-user-id` header; `addMovie` does not
+- Gateway subgraph URLs: `CATALOG_URL`, `USER_URL`, `RATING_URL`, `PLAYBACK_URL`; polling interval: `SUPERGRAPH_POLL_MS` (default 10000ms)
+- `prometheus.yml` scrapes via `host.docker.internal` (local dev); `prometheus-docker.yml` uses compose hostnames (full-stack / k8s)
 
 ## Ports Quick Reference
 
@@ -200,14 +180,17 @@ Group imports in this order (separated by blank lines):
 | Catalog | 8081 | http://localhost:8081/graphiql |
 | User | 8082 | http://localhost:8082/graphiql |
 | Rating | 8083 | http://localhost:8083/graphiql |
-| Playback | 8086 | http://localhost:8086/graphiql |
 | Analytics | 8084 | http://localhost:8084 |
+| Admin | 8085 | http://localhost:8085 |
+| Playback | 8086 | http://localhost:8086/graphiql |
 | Gateway | 4000 | http://localhost:4000 |
-| UI | 5173 | http://localhost:5173 |
-| OpenTelemetry Collector (OTLP gRPC) | 4317 | `localhost:4317` (from host when Compose maps ports) |
-| OpenTelemetry Collector (OTLP HTTP) | 4318 | `http://localhost:4318` (traces: `/v1/traces`, logs: `/v1/logs`) |
-| Grafana Tempo | 3200 | http://localhost:3200 |
-| Grafana Loki | 3100 | http://localhost:3100 |
+| UI (dev) | 5173 | http://localhost:5173 |
+| UI (docker-full) | 3000 | http://localhost:3000 |
+| OTLP gRPC / HTTP | 4317 / 4318 | traces: `/v1/traces`, logs: `/v1/logs` |
+| Tempo | 3200 | http://localhost:3200 |
+| Loki | 3100 | http://localhost:3100 |
 | cAdvisor | 8099 | http://localhost:8099 |
 | Prometheus | 9090 | http://localhost:9090 |
 | Grafana | 3005 | http://localhost:3005 |
+| Kafka UI | 8090 | http://localhost:8090 |
+| RedisInsight | 8001 | http://localhost:8001 |

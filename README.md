@@ -38,11 +38,69 @@ _Spring Boot Admin is optional; it only monitors registered apps via Eureka._
 **Request flow**
 
 1. The browser talks only to the **federation gateway** (`http://localhost:4000/` by default) for GraphQL.
-2. The gateway **introspects** the three subgraphs on a short interval, builds the **supergraph SDL**, and **routes** each field to the correct service.
+2. The gateway **introspects** the four subgraphs (catalog, user, rating, playback) on a short interval, builds the **supergraph SDL**, and **routes** each field to the correct service.
 3. **JWT**: The gateway validates `Authorization: Bearer …` with `JWT_SECRET` (default aligns with user-service). It forwards **`x-user-id`** to subgraphs for authenticated operations. **Refresh** tokens (`typ: refresh`) are ignored for API auth.
 4. **Tracing & logs**: `traceparent` / `tracestate` from the client are forwarded to subgraphs. **All Java services** use **`spring-boot-starter-opentelemetry`** and send spans and logs (**OTLP/HTTP**) to the collector (`localhost:4318` from the host when Compose is up). The collector fans out traces to **Grafana Tempo** and logs to **Grafana Loki**. Log records are automatically enriched with `trace_id` / `span_id`, so Grafana can jump from a Tempo span to the matching Loki logs and back.
 5. **rating-service** can publish events to **Kafka**; **analytics-service** consumes them and uses **Redis** (see `docker-compose.yml` for local Redis). **catalog-service** uses the same Redis instance (via `REDIS_HOST`) for **Spring Cache** on the `movies` query (`@Cacheable` / `@CacheEvict` on `addMovie`).
 6. **Resilience (catalog)**: catalog-service wraps MongoDB **reads** (`movies`, `movie`, federation entity fetch) in a **Resilience4j circuit breaker** (Spring Cloud Circuit Breaker abstraction, instance **`mongoCatalog`**) with safe fallbacks (`movies` → empty list, `movie` → `null`). Writes (`addMovie`) are **not** wrapped. Breaker state is exposed via Actuator health and Micrometer / Prometheus metrics (`resilience4j_circuitbreaker_*`).
+
+---
+
+## Application flows (use cases)
+
+The UI sends **all** GraphQL traffic to the **federation gateway**. The gateway fans out to **catalog-service**, **user-service**, **rating-service**, and **playback-service** according to the federated schema. Eureka registers the Java subgraphs for discovery and ops; the gateway uses configured subgraph URLs (`CATALOG_URL`, `USER_URL`, `RATING_URL`, `PLAYBACK_URL`). Below, each flow is the **happy path** unless noted.
+
+### Browse catalog without signing in
+
+- The client runs queries such as **`movies`** (and nested **`ratings`** on each movie).
+- The gateway resolves **`movies`** / **`movie`** on **catalog-service** (MongoDB; Redis-backed cache on reads where configured).
+- Federated **`ratings`** on **`Movie`** are resolved by **rating-service** via entity references (`Movie` `@key`).
+- **`myPlayback`** on **`Movie`** is optional federated data from **playback-service**; without a valid access token the gateway does not send **`x-user-id`**, so this field resolves to **`null`** rather than failing the whole query.
+- No JWT is required for read-only catalog and public rating lists.
+
+### Register or log in
+
+- The client calls **`register`** or **`login`** on the supergraph; the gateway routes the mutation to **user-service**.
+- **user-service** validates credentials (login) or creates the user (register), then returns **`AuthPayload`**: access token, refresh token, **`userId`**, **`username`**.
+- Access tokens carry **`userId`** and **`typ: access`**; refresh tokens carry **`typ: refresh`** (same **`JWT_SECRET`** as the gateway).
+- The UI stores tokens (and **`userId`**) locally and sends an **`Authorization`** header whose value is **`Bearer`** followed by the access token on subsequent requests to the gateway.
+
+### Stay signed in (token refresh)
+
+- Before access tokens expire, the UI can call **`refresh(refreshToken: …)`** (handled by **user-service** through the gateway).
+- **user-service** verifies the refresh token and mints a new **access** (and typically refresh) pair.
+- The gateway **does not** treat refresh tokens as API authorization: if a refresh token is sent as the Bearer token, **`x-user-id`** is **not** forwarded—only **access** tokens populate **`decoded.userId`** and thus **`x-user-id`** to subgraphs.
+
+### Load home catalog with federated ratings and personal playback hints
+
+- A single query may combine **catalog** fields with **rating** and **playback** extensions on **`Movie`**.
+- The gateway runs **multiple subgraph requests** as needed (plan execution), merging results into one GraphQL response.
+- With a valid access token, the gateway adds **`x-user-id`** on downstream HTTP calls so **playback-service** can resolve **`myPlayback`** for the current user.
+- **`traceparent`** / **`tracestate`** from the browser (when present) are copied into gateway context and forwarded to subgraphs so Java OpenTelemetry continues the same trace.
+
+### Submit a rating (**authenticated**)
+
+- The client calls **`addRating(movieId, stars)`** with a **`Bearer`** access token on the request.
+- The gateway verifies the JWT, puts **`userId`** in context, and sets **`x-user-id`** on requests to subgraphs.
+- **rating-service** reads **`x-user-id`** (not a GraphQL argument for user id) and persists the rating; if the header is missing, it rejects the mutation.
+- **rating-service** may emit Kafka events for downstream **analytics-service** (consume → Redis / metrics), depending on configuration.
+
+### Add a movie (**catalog mutation**)
+
+- The client calls **`addMovie`** through the gateway to **catalog-service**.
+- **catalog-service** does **not** require **`x-user-id`** in this project; catalog mutations are not gated on gateway identity in the Java code.
+- Cache eviction runs on **`addMovie`** so **`movies`** queries see fresh data after writes.
+
+### Playback progress and watch history (**authenticated** where enforced)
+
+- **`updatePlaybackProgress`** and **`recordPlay`** require **`x-user-id`** from the gateway; **playback-service** throws if the header is absent.
+- **`User.continueWatching`** and **`User.playHistory`** return personalized lists only when **`x-user-id`** matches the **`User`** entity being resolved; otherwise the client gets empty data (no hard error on those fields).
+- Data is stored in **playback-service**’s PostgreSQL layer as implemented in that module.
+
+### Cross-cutting behavior
+
+- **Unauthenticated** requests still traverse the gateway; only operations that enforce **`x-user-id`** or personalized federated fields behave differently.
+- **Observability**: Java services export OTLP traces and logs to the collector; correlating UI → gateway → subgraphs works best when trace context headers are propagated as described above.
 
 ---
 
